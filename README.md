@@ -14,6 +14,8 @@ Expand Recent Records: Overrides the hardcoded limit of "Recently Used" items, i
 
 Remove ads in the message page
 
+Support single device multi-account-signin. You can simply change a singlular char at the fingerprint key in the config file to make it different. Just keep the base64 formatt.
+
 ！！！！！！！！！！！！！！！！！！！！！
 
 How to do the spoof location check in?
