@@ -4,12 +4,12 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
-import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
@@ -53,9 +53,8 @@ public class MainHook implements IXposedHookLoadPackage {
         String address = "";
         boolean modifyName = false;
         String name = "";
-        // 核心：仅保留设备指纹替换
-        boolean modifyDeviceFlag = false;
-        String customDeviceFlag = "";
+        // 核心：一键随机指纹开关
+        boolean randomizeDeviceFlag = false;
     }
 
     private static SignConfig cachedConfig = null;
@@ -154,7 +153,7 @@ public class MainHook implements IXposedHookLoadPackage {
                                             conn.setRequestMethod("GET");
                                         }
 
-                                        // 直接放行原始 Cookie，不再画蛇添足
+                                        // 直接放行原始 Cookie
                                         String cookie = android.webkit.CookieManager.getInstance().getCookie(newUrlString);
                                         if (cookie != null) {
                                             conn.setRequestProperty("Cookie", cookie);
@@ -174,25 +173,26 @@ public class MainHook implements IXposedHookLoadPackage {
                 }
             });
 
-            // 3. 终极一击：WebView 底层 JS 注入拦截 (致盲前端风控)
+            // 3. 终极一击：WebView 底层 JS 自动化动态指纹注入
             XC_MethodHook jsInterceptHook = new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     if (param.args.length > 0 && param.args[0] instanceof String) {
                         String jsCode = (String) param.args[0];
 
-                        // 仅对设备指纹下发进行拦截替换
+                        // 拦截设备指纹下发
                         if (jsCode.contains("CLIENT_DEVICE_FLAG")) {
                             SignConfig config = getSignConfig();
-                            if (config.modifyDeviceFlag && !config.customDeviceFlag.isEmpty()) {
+                            if (config.randomizeDeviceFlag) {
                                 int start = jsCode.indexOf('{');
                                 int end = jsCode.lastIndexOf('}');
                                 if (start != -1 && end != -1 && start < end) {
-                                    // 擦除本地记忆 + 替换伪造指纹
+                                    // 擦除本地记忆 + 动态生成随机指纹注入
                                     String wipeMemory = "window.localStorage.clear(); window.sessionStorage.clear(); ";
-                                    String newJsCode = wipeMemory + jsCode.substring(0, start) + config.customDeviceFlag + jsCode.substring(end + 1);
+                                    String randomFlagJson = generateRandomDeviceFlag();
+                                    String newJsCode = wipeMemory + jsCode.substring(0, start) + randomFlagJson + jsCode.substring(end + 1);
                                     param.args[0] = newJsCode;
-                                    XposedBridge.log("Chaoxing AdSkip: 假指纹已注入，轻松拿捏草台班子！");
+                                    XposedBridge.log("Chaoxing AdSkip: 随机假指纹已自动生成并注入，草台班子被拿捏 -> " + randomFlagJson);
                                 }
                             }
                         }
@@ -208,6 +208,19 @@ public class MainHook implements IXposedHookLoadPackage {
         }
     }
 
+    // 动态生成符合草台班子审美标准（43位随机字符 + =号）的 JSON
+    private String generateRandomDeviceFlag() {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        Random random = new Random();
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"flagInfo\":\"");
+        for (int i = 0; i < 43; i++) {
+            sb.append(chars.charAt(random.nextInt(chars.length())));
+        }
+        sb.append("=\"}");
+        return sb.toString();
+    }
+
     // 带有节流缓存的配置读取方法
     private SignConfig getSignConfig() {
         if (cachedConfig != null && (System.currentTimeMillis() - lastReadTime < 3000)) {
@@ -221,8 +234,7 @@ public class MainHook implements IXposedHookLoadPackage {
             try {
                 file.getParentFile().mkdirs();
                 FileWriter fw = new FileWriter(file);
-                // 移除了冗余的 UA 默认配置
-                fw.write("是否开启定位修改: false\n经度: \n纬度: \n是否开启地址名修改: false\n地址名: \n是否开启名字修改: false\n名字: \n是否开启设备指纹替换: false\n自定义设备指纹:\n");
+                fw.write("是否开启定位修改: false\n经度: \n纬度: \n是否开启地址名修改: false\n地址名: \n是否开启名字修改: false\n名字: \n是否开启随机指纹: false\n");
                 fw.close();
             } catch (Exception e) {}
             cachedConfig = config;
@@ -241,8 +253,8 @@ public class MainHook implements IXposedHookLoadPackage {
                 else if (line.startsWith("地址名:")) config.address = parseStringValue(line);
                 else if (line.startsWith("是否开启名字修改:")) config.modifyName = parseBooleanValue(line);
                 else if (line.startsWith("名字:")) config.name = parseStringValue(line);
-                else if (line.startsWith("是否开启设备指纹替换:")) config.modifyDeviceFlag = parseBooleanValue(line);
-                else if (line.startsWith("自定义设备指纹:")) config.customDeviceFlag = parseStringValue(line);
+                    // 全新的一键开关解析
+                else if (line.startsWith("是否开启随机指纹:")) config.randomizeDeviceFlag = parseBooleanValue(line);
             }
         } catch (Exception e) {}
 
