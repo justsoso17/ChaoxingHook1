@@ -1,16 +1,23 @@
 package com.fredoseep.chaoxinghook;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
@@ -22,9 +29,18 @@ public class MainHook implements IXposedHookLoadPackage {
 
     private static final Set<String> hookedWebViewClients = new HashSet<>();
 
-    // ==========================================================
-    // 混淆字典配置区
-    // ==========================================================
+    // ===== 空间打击算法状态存储 =====
+    static class LocationPoint {
+        double lat;
+        double lon;
+        double distance;
+        LocationPoint(double lat, double lon, double distance) {
+            this.lat = lat; this.lon = lon; this.distance = distance;
+        }
+    }
+    private static final List<LocationPoint> historyPoints = new ArrayList<>();
+    private static double[] calculatedTarget = null;
+
     public static class ObfuscationMap {
         public static final String CLASS_SPLASH_VIEW_MODEL = "com.chaoxing.mobile.activity.SplashViewModel";
         public static final String METHOD_SPLASH_A = "a";
@@ -53,8 +69,8 @@ public class MainHook implements IXposedHookLoadPackage {
         String address = "";
         boolean modifyName = false;
         String name = "";
-        // 核心：一键随机指纹开关
         boolean randomizeDeviceFlag = false;
+        boolean autoCalculateLocation = false;
     }
 
     private static SignConfig cachedConfig = null;
@@ -62,11 +78,9 @@ public class MainHook implements IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(LoadPackageParam lpparam) throws Throwable {
-        if (!lpparam.packageName.equals("com.chaoxing.mobile")) {
-            return;
-        }
+        if (!lpparam.packageName.equals("com.chaoxing.mobile")) return;
 
-        // 1. 原有的基础功能屏蔽 (广告、推荐等)
+        // 1. 基础功能屏蔽
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_SPLASH_VIEW_MODEL, lpparam.classLoader), ObfuscationMap.METHOD_SPLASH_A, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { param.setResult(null); } }); } catch (Throwable t) {}
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_HOME_PAGE_HEADER, lpparam.classLoader), ObfuscationMap.METHOD_HOME_HEADER_G, new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam param) { if (param.args.length > 0) param.args[0] = null; } }); } catch (Throwable t) {}
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_CATEGORY_HOLDER, lpparam.classLoader), ObfuscationMap.METHOD_CATEGORY_HOLDER_O, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object viewHolder = param.thisObject; android.widget.TextView tvLeft = (android.widget.TextView) XposedHelpers.getObjectField(viewHolder, ObfuscationMap.FIELD_CATEGORY_HOLDER_TV_LEFT); if (tvLeft != null && tvLeft.getText() != null) { String title = tvLeft.getText().toString(); if (title.contains("推荐") || title.contains("Recommend")) { android.view.View itemView = (android.view.View) XposedHelpers.getObjectField(viewHolder, "itemView"); if (itemView != null) { itemView.setVisibility(android.view.View.GONE); android.view.ViewGroup.LayoutParams layoutParams = itemView.getLayoutParams(); layoutParams.height = 0; layoutParams.width = 0; itemView.setLayoutParams(layoutParams); } } } } }); } catch (Throwable t) {}
@@ -75,7 +89,7 @@ public class MainHook implements IXposedHookLoadPackage {
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_CHAT_MANAGER_Q1, lpparam.classLoader), ObfuscationMap.METHOD_CHAT_MANAGER_C1, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result instanceof java.util.List) { java.util.List<?> list = (java.util.List<?>) result; for (int i = list.size() - 1; i >= 0; i--) { Object info = list.get(i); if (info != null && info.getClass().getSimpleName().equals("ConversationInfo")) { if ((Integer) XposedHelpers.callMethod(info, "getType") == 20) { list.remove(i); } } } } } }); } catch (Throwable t) {}
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_EM_CMD_MESSAGE_BODY, lpparam.classLoader), ObfuscationMap.METHOD_EM_CMD_ACTION, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result != null && "REVOKE_FLAG".equals(result.toString())) { param.setResult("BLOCK_REVOKE_FLAG"); } } }); } catch (Throwable t) {}
 
-        // 2. WebView 核心请求拦截 (位置、名字拦截)
+        // 2. WebView 请求拦截 (回归平面解析算法)
         try {
             Class<?> webViewClass = XposedHelpers.findClass("android.webkit.WebView", lpparam.classLoader);
             XposedBridge.hookAllMethods(webViewClass, "setWebViewClient", new XC_MethodHook() {
@@ -104,28 +118,53 @@ public class MainHook implements IXposedHookLoadPackage {
                                 }
                                 if (url == null) return;
 
-                                // 考试风控拦截
-                                if (url.startsWith("https://mooc1-api.chaoxing.com/keeper/api/receiveExamLogs") || url.contains("/exam-ans/exam/phone/exit-count")) {
-                                    try {
-                                        Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
-                                        if (responseClass != null) {
-                                            String fakeResponse = "{\"status\":1,\"result\":true,\"msg\":\"success\",\"data\":null}";
-                                            innerParam.setResult(XposedHelpers.newInstance(responseClass, "application/json", "utf-8", new java.io.ByteArrayInputStream(fakeResponse.getBytes("UTF-8"))));
-                                        }
-                                    } catch (Exception e) {}
-                                    return;
-                                }
-
-                                // 网页端签到定位修改
                                 if (url.contains("stuSignajax")) {
                                     SignConfig config = getSignConfig();
                                     String newUrlString = url;
                                     boolean hasModified = false;
+                                    double sendLat = 0, sendLon = 0;
 
-                                    if (config.modifyLocation && !config.latitude.isEmpty() && !config.longitude.isEmpty()) {
-                                        newUrlString = newUrlString.replaceAll("latitude=[^&]*", "latitude=" + config.latitude).replaceAll("longitude=[^&]*", "longitude=" + config.longitude);
+                                    if (config.autoCalculateLocation) {
+                                        if (calculatedTarget != null) {
+                                            sendLat = calculatedTarget[0];
+                                            sendLon = calculatedTarget[1];
+                                        } else {
+                                            double baseLat = 39.90923, baseLon = 116.397428;
+                                            try {
+                                                if (!config.latitude.isEmpty()) baseLat = Double.parseDouble(config.latitude);
+                                                if (!config.longitude.isEmpty()) baseLon = Double.parseDouble(config.longitude);
+                                            } catch (Exception e){}
+
+                                            if (historyPoints.isEmpty()) {
+                                                sendLat = baseLat;
+                                                sendLon = baseLon;
+                                            } else {
+                                                LocationPoint lastP = historyPoints.get(historyPoints.size() - 1);
+                                                double offset = Math.max(0.0001, lastP.distance / 200000.0);
+                                                int attempt = historyPoints.size();
+
+                                                if (attempt % 3 == 1) {
+                                                    sendLat = lastP.lat + offset;
+                                                    sendLon = lastP.lon;
+                                                } else if (attempt % 3 == 2) {
+                                                    sendLat = lastP.lat;
+                                                    sendLon = lastP.lon + offset;
+                                                } else {
+                                                    sendLat = lastP.lat - offset;
+                                                    sendLon = lastP.lon - offset;
+                                                }
+                                            }
+                                        }
+                                        newUrlString = newUrlString.replaceAll("latitude=[^&]*", "latitude=" + sendLat)
+                                                .replaceAll("longitude=[^&]*", "longitude=" + sendLon);
+                                        hasModified = true;
+
+                                    } else if (config.modifyLocation && !config.latitude.isEmpty() && !config.longitude.isEmpty()) {
+                                        newUrlString = newUrlString.replaceAll("latitude=[^&]*", "latitude=" + config.latitude)
+                                                .replaceAll("longitude=[^&]*", "longitude=" + config.longitude);
                                         hasModified = true;
                                     }
+
                                     if (config.modifyAddress && !config.address.isEmpty()) {
                                         newUrlString = newUrlString.replaceAll("address=[^&]*", "address=" + URLEncoder.encode(config.address, "UTF-8"));
                                         hasModified = true;
@@ -153,16 +192,65 @@ public class MainHook implements IXposedHookLoadPackage {
                                             conn.setRequestMethod("GET");
                                         }
 
-                                        // 直接放行原始 Cookie
                                         String cookie = android.webkit.CookieManager.getInstance().getCookie(newUrlString);
-                                        if (cookie != null) {
-                                            conn.setRequestProperty("Cookie", cookie);
+                                        if (cookie != null) { conn.setRequestProperty("Cookie", cookie); }
+
+                                        InputStream is = conn.getInputStream();
+                                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                        byte[] buffer = new byte[1024];
+                                        int len;
+                                        while ((len = is.read(buffer)) != -1) baos.write(buffer, 0, len);
+                                        String jsonResp = new String(baos.toByteArray(), "UTF-8");
+
+                                        if (config.autoCalculateLocation) {
+                                            Matcher m = Pattern.compile("距.*?([0-9.]+)\\s*米").matcher(jsonResp);
+                                            if (m.find()) {
+                                                String originalMatch = m.group(0);
+                                                double dist = Double.parseDouble(m.group(1));
+
+                                                if (calculatedTarget != null) {
+                                                    // 算出了结果依然有误差，清空目标靶心，但把最后打卡的点作为绝佳的局部基准点！
+                                                    calculatedTarget = null;
+                                                }
+
+                                                historyPoints.add(new LocationPoint(sendLat, sendLon, dist));
+                                                // 防止内存和坐标点过多，只取最近的 3 个高价值点用于方程计算
+                                                if (historyPoints.size() > 3) {
+                                                    historyPoints.remove(0);
+                                                }
+
+                                                String customMsg = "";
+                                                if (historyPoints.size() == 3) {
+                                                    calculatedTarget = calculateTriangulation(historyPoints);
+                                                    if (calculatedTarget != null) {
+                                                        customMsg = "Xposed提示: 目标坐标已锁定，误差已过滤，请点击执行最终打卡。";
+                                                    } else {
+                                                        historyPoints.clear();
+                                                        customMsg = "Xposed提示: 三点共线计算失败，正在重新采集，请再次点击。";
+                                                    }
+                                                } else {
+                                                    customMsg = "Xposed提示: 距靶心 " + dist + " 米，采集进度(" + historyPoints.size() + "/3)。请再次点击。";
+                                                }
+
+                                                jsonResp = jsonResp.replace(originalMatch, customMsg);
+                                                XposedBridge.log("Chaoxing AdSkip: " + customMsg);
+
+                                            } else if (jsonResp.contains("success") || jsonResp.contains("成功")) {
+                                                historyPoints.clear();
+                                                calculatedTarget = null;
+                                                XposedBridge.log("Chaoxing AdSkip: 定位爆破签到大成功！");
+                                            }
                                         }
 
                                         String contentType = conn.getContentType();
                                         Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
                                         if (responseClass != null) {
-                                            innerParam.setResult(XposedHelpers.newInstance(responseClass, (contentType != null) ? contentType.split(";")[0].trim() : "application/json", conn.getContentEncoding() != null ? conn.getContentEncoding() : "utf-8", conn.getInputStream()));
+                                            innerParam.setResult(XposedHelpers.newInstance(
+                                                    responseClass,
+                                                    (contentType != null) ? contentType.split(";")[0].trim() : "application/json",
+                                                    conn.getContentEncoding() != null ? conn.getContentEncoding() : "utf-8",
+                                                    new ByteArrayInputStream(jsonResp.getBytes("UTF-8"))
+                                            ));
                                         }
                                     } catch (Exception e) {}
                                 }
@@ -173,33 +261,27 @@ public class MainHook implements IXposedHookLoadPackage {
                 }
             });
 
-            // 3. 终极一击：WebView 底层 JS 自动化动态指纹注入
+            // 3. WebView 底层 JS 自动化动态指纹注入
             XC_MethodHook jsInterceptHook = new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     if (param.args.length > 0 && param.args[0] instanceof String) {
                         String jsCode = (String) param.args[0];
-
-                        // 拦截设备指纹下发
                         if (jsCode.contains("CLIENT_DEVICE_FLAG")) {
                             SignConfig config = getSignConfig();
                             if (config.randomizeDeviceFlag) {
                                 int start = jsCode.indexOf('{');
                                 int end = jsCode.lastIndexOf('}');
                                 if (start != -1 && end != -1 && start < end) {
-                                    // 擦除本地记忆 + 动态生成随机指纹注入
                                     String wipeMemory = "window.localStorage.clear(); window.sessionStorage.clear(); ";
-                                    String randomFlagJson = generateRandomDeviceFlag();
-                                    String newJsCode = wipeMemory + jsCode.substring(0, start) + randomFlagJson + jsCode.substring(end + 1);
+                                    String newJsCode = wipeMemory + jsCode.substring(0, start) + generateRandomDeviceFlag() + jsCode.substring(end + 1);
                                     param.args[0] = newJsCode;
-                                    XposedBridge.log("Chaoxing AdSkip: 随机假指纹已自动生成并注入，草台班子被拿捏 -> " + randomFlagJson);
                                 }
                             }
                         }
                     }
                 }
             };
-
             XposedBridge.hookAllMethods(webViewClass, "evaluateJavascript", jsInterceptHook);
             XposedBridge.hookAllMethods(webViewClass, "loadUrl", jsInterceptHook);
 
@@ -208,7 +290,52 @@ public class MainHook implements IXposedHookLoadPackage {
         }
     }
 
-    // 动态生成符合草台班子审美标准（43位随机字符 + =号）的 JSON
+    // ==========================================================
+    // 回归：解析几何与局部切平面克莱姆法则（永远的神！）
+    // ==========================================================
+    private double[] calculateTriangulation(List<LocationPoint> points) {
+        if (points.size() < 3) return null;
+
+        LocationPoint p1 = points.get(0);
+        LocationPoint p2 = points.get(1);
+        LocationPoint p3 = points.get(2);
+
+        double R = 6378137.0;
+        double lat0 = p1.lat * Math.PI / 180.0;
+
+        double x1 = 0, y1 = 0;
+        double r1 = p1.distance;
+
+        double x2 = (p2.lon - p1.lon) * (Math.PI / 180.0) * R * Math.cos(lat0);
+        double y2 = (p2.lat - p1.lat) * (Math.PI / 180.0) * R;
+        double r2 = p2.distance;
+
+        double x3 = (p3.lon - p1.lon) * (Math.PI / 180.0) * R * Math.cos(lat0);
+        double y3 = (p3.lat - p1.lat) * (Math.PI / 180.0) * R;
+        double r3 = p3.distance;
+
+        double A = 2 * x2;
+        double B = 2 * y2;
+        double C = r1 * r1 - r2 * r2 + x2 * x2 + y2 * y2;
+
+        double D = 2 * x3;
+        double E = 2 * y3;
+        double F = r1 * r1 - r3 * r3 + x3 * x3 + y3 * y3;
+
+        double det = A * E - B * D;
+        if (Math.abs(det) < 1.0) {
+            return null; // 共线无解
+        }
+
+        double targetX = (C * E - B * F) / det;
+        double targetY = (A * F - C * D) / det;
+
+        double targetLon = p1.lon + (targetX / (R * Math.cos(lat0) * (Math.PI / 180.0)));
+        double targetLat = p1.lat + (targetY / (R * (Math.PI / 180.0)));
+
+        return new double[]{targetLat, targetLon};
+    }
+
     private String generateRandomDeviceFlag() {
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         Random random = new Random();
@@ -221,11 +348,8 @@ public class MainHook implements IXposedHookLoadPackage {
         return sb.toString();
     }
 
-    // 带有节流缓存的配置读取方法
     private SignConfig getSignConfig() {
-        if (cachedConfig != null && (System.currentTimeMillis() - lastReadTime < 3000)) {
-            return cachedConfig;
-        }
+        if (cachedConfig != null && (System.currentTimeMillis() - lastReadTime < 3000)) return cachedConfig;
 
         SignConfig config = new SignConfig();
         File file = new File("/storage/emulated/0/Android/data/com.chaoxing.mobile/files/chaoxing_loc.txt");
@@ -234,7 +358,7 @@ public class MainHook implements IXposedHookLoadPackage {
             try {
                 file.getParentFile().mkdirs();
                 FileWriter fw = new FileWriter(file);
-                fw.write("是否开启定位修改: false\n经度: \n纬度: \n是否开启地址名修改: false\n地址名: \n是否开启名字修改: false\n名字: \n是否开启随机指纹: false\n");
+                fw.write("是否开启定位修改: false\n经度: \n纬度: \n是否开启地址名修改: false\n地址名: \n是否开启名字修改: false\n名字: \n是否开启随机指纹: true\n是否开启经纬度爆破: false\n");
                 fw.close();
             } catch (Exception e) {}
             cachedConfig = config;
@@ -253,8 +377,8 @@ public class MainHook implements IXposedHookLoadPackage {
                 else if (line.startsWith("地址名:")) config.address = parseStringValue(line);
                 else if (line.startsWith("是否开启名字修改:")) config.modifyName = parseBooleanValue(line);
                 else if (line.startsWith("名字:")) config.name = parseStringValue(line);
-                    // 全新的一键开关解析
                 else if (line.startsWith("是否开启随机指纹:")) config.randomizeDeviceFlag = parseBooleanValue(line);
+                else if (line.startsWith("是否开启经纬度爆破:")) config.autoCalculateLocation = parseBooleanValue(line);
             }
         } catch (Exception e) {}
 
