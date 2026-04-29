@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/mi_background">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingTop="145dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="24dp"
+                android:background="@drawable/mi_card_elevation">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/section_location"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/mi_text_primary"
+                    android:layout_marginBottom="24dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:background="@color/mi_background"
+                    android:layout_marginBottom="16dp"
+                    android:layout_marginLeft="-8dp"
+                    android:layout_marginRight="-8dp">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/enable_location_modify"
+                        android:textSize="16sp"
+                        android:textColor="@color/mi_text_primary" />
+                    <Switch
+                        android:id="@+id/switch_location_modify"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:thumbTint="@color/mi_primary"
+                        android:trackTint="@color/mi_switch_off" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layout_latitude"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:background="@color/mi_background"
+                    android:layout_marginBottom="12dp"
+                    android:layout_marginLeft="-8dp"
+                    android:layout_marginRight="-8dp">
+                    <TextView
+                        android:layout_width="80dp"
+                        android:layout_height="wrap_content"
+                        android:text="@string/latitude"
+                        android:textSize="14sp"
+                        android:textColor="@color/mi_text_secondary" />
+                    <EditText
+                        android:id="@+id/et_latitude"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="@string/hint_latitude"
+                        android:inputType="numberDecimal|numberSigned"
+                        android:textSize="15sp"
+                        android:textColor="@color/mi_text_primary"
+                        android:textColorHint="@color/mi_text_hint"
+                        android:background="@null" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layout_longitude"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:background="@color/mi_background"
+                    android:layout_marginLeft="-8dp"
+                    android:layout_marginRight="-8dp">
+                    <TextView
+                        android:layout_width="80dp"
+                        android:layout_height="wrap_content"
+                        android:text="@string/longitude"
+                        android:textSize="14sp"
+                        android:textColor="@color/mi_text_secondary" />
+                    <EditText
+                        android:id="@+id/et_longitude"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="@string/hint_longitude"
+                        android:inputType="numberDecimal|numberSigned"
+                        android:textSize="15sp"
+                        android:textColor="@color/mi_text_primary"
+                        android:textColorHint="@color/mi_text_hint"
+                        android:background="@null" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1px"
+                    android:background="@color/mi_divider"
+                    android:layout_marginTop="20dp"
+                    android:layout_marginBottom="20dp"
+                    android:layout_marginLeft="-8dp"
+                    android:layout_marginRight="-8dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:background="@color/mi_background"
+                    android:layout_marginLeft="-8dp"
+                    android:layout_marginRight="-8dp">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/enable_auto_calculate"
+                        android:textSize="16sp"
+                        android:textColor="@color/mi_text_primary" />
+                    <Switch
+                        android:id="@+id/switch_auto_calculate"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:thumbTint="@color/mi_primary"
+                        android:trackTint="@color/mi_switch_off" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="24dp"
+                android:background="@drawable/mi_card_elevation"
+                android:layout_marginTop="20dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/section_address"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/mi_text_primary"
+                    android:layout_marginBottom="24dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:background="@color/mi_background"
+                    android:layout_marginBottom="16dp"
+                    android:layout_marginLeft="-8dp"
+                    android:layout_marginRight="-8dp">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/enable_address_modify"
+                        android:textSize="16sp"
+                        android:textColor="@color/mi_text_primary" />
+                    <Switch
+                        android:id="@+id/switch_address_modify"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:thumbTint="@color/mi_primary"
+                        android:trackTint="@color/mi_switch_off" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layout_address"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:background="@color/mi_background"
+                    android:layout_marginLeft="-8dp"
+                    android:layout_marginRight="-8dp">
+                    <TextView
+                        android:layout_width="80dp"
+                        android:layout_height="wrap_content"
+                        android:text="@string/address"
+                        android:textSize="14sp"
+                        android:textColor="@color/mi_text_secondary" />
+                    <EditText
+                        android:id="@+id/et_address"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="@string/hint_address"
+                        android:textSize="15sp"
+                        android:textColor="@color/mi_text_primary"
+                        android:textColorHint="@color/mi_text_hint"
+                        android:background="@null" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="24dp"
+                android:background="@drawable/mi_card_elevation"
+                android:layout_marginTop="20dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/section_name"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/mi_text_primary"
+                    android:layout_marginBottom="24dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:background="@color/mi_background"
+                    android:layout_marginBottom="16dp"
+                    android:layout_marginLeft="-8dp"
+                    android:layout_marginRight="-8dp">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/enable_name_modify"
+                        android:textSize="16sp"
+                        android:textColor="@color/mi_text_primary" />
+                    <Switch
+                        android:id="@+id/switch_name_modify"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:thumbTint="@color/mi_primary"
+                        android:trackTint="@color/mi_switch_off" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layout_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:background="@color/mi_background"
+                    android:layout_marginLeft="-8dp"
+                    android:layout_marginRight="-8dp">
+                    <TextView
+                        android:layout_width="80dp"
+                        android:layout_height="wrap_content"
+                        android:text="@string/name"
+                        android:textSize="14sp"
+                        android:textColor="@color/mi_text_secondary" />
+                    <EditText
+                        android:id="@+id/et_name"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="@string/hint_name"
+                        android:textSize="15sp"
+                        android:textColor="@color/mi_text_primary"
+                        android:textColorHint="@color/mi_text_hint"
+                        android:background="@null" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="24dp"
+                android:background="@drawable/mi_card_elevation"
+                android:layout_marginTop="20dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/section_advanced"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/mi_text_primary"
+                    android:layout_marginBottom="24dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:background="@color/mi_background"
+                    android:layout_marginLeft="-8dp"
+                    android:layout_marginRight="-8dp">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/enable_random_device_flag"
+                        android:textSize="16sp"
+                        android:textColor="@color/mi_text_primary" />
+                    <Switch
+                        android:id="@+id/switch_random_device_flag"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:thumbTint="@color/mi_primary"
+                        android:trackTint="@color/mi_switch_off" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="32dp">
+
+                <LinearLayout
+                    android:id="@+id/btn_save"
+                    android:layout_width="0dp"
+                    android:layout_height="56dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/mi_button_primary"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/save"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/white" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/btn_reset"
+                    android:layout_width="0dp"
+                    android:layout_height="56dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/mi_button_secondary"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:orientation="vertical"
+                    android:layout_marginLeft="16dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/reset"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/mi_text_secondary" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/tip"
+                android:textSize="13sp"
+                android:textColor="@color/mi_text_hint"
+                android:gravity="center"
+                android:padding="16dp" />
+
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="130dp"
+        android:background="@drawable/mi_header_bg"
+        android:padding="20dp"
+        android:paddingTop="100dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="66dp"
+            android:gravity="bottom"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginRight="14dp"
+                android:background="#20FFFFFF"
+                android:gravity="center">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="CX"
+                    android:textColor="@color/white"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/app_name"
+                    android:textColor="@color/white"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="超星学习通辅助工具"
+                    android:textColor="#E0FFFFFF"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</FrameLayout>
