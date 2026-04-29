@@ -7,4 +7,19 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="gray">#FF9E9E9E</color>
+    <color name="light_gray">#FFE0E0E0</color>
+    
+    <color name="mi_primary">#FFFF6700</color>
+    <color name="mi_primary_dark">#FFCC5200</color>
+    <color name="mi_accent">#FF00C853</color>
+    <color name="mi_background">#FFF8F8F8</color>
+    <color name="mi_card">#FFFFFFFF</color>
+    <color name="mi_card_hover">#FFF5F5F5</color>
+    <color name="mi_text_primary">#FF1A1A1A</color>
+    <color name="mi_text_secondary">#FF666666</color>
+    <color name="mi_text_hint">#FFAAAAAA</color>
+    <color name="mi_divider">#FFEEEEEE</color>
+    <color name="mi_switch_on">#FFFF6700</color>
+    <color name="mi_switch_off">#FFDDDDDD</color>
 </resources>

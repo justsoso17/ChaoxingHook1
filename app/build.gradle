@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace 'com.example.chaoxinghook'
+    namespace 'com.fredoseep.chaoxinghook'
     compileSdk {
         version = release(36)
     }
