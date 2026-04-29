@@ -1,0 +1,31 @@
+<resources>
+    <string name="app_name">ChaoxingHook</string>
+    
+    <string name="section_location">定位设置</string>
+    <string name="section_address">地址设置</string>
+    <string name="section_name">姓名设置</string>
+    <string name="section_advanced">高级设置</string>
+    
+    <string name="enable_location_modify">开启定位修改</string>
+    <string name="latitude">纬度</string>
+    <string name="longitude">经度</string>
+    <string name="enable_auto_calculate">开启经纬度爆破</string>
+    
+    <string name="enable_address_modify">开启地址修改</string>
+    <string name="address">地址</string>
+    
+    <string name="enable_name_modify">开启姓名修改</string>
+    <string name="name">姓名</string>
+    
+    <string name="enable_random_device_flag">开启随机指纹</string>
+    
+    <string name="save">保存</string>
+    <string name="reset">重置</string>
+    
+    <string name="hint_latitude">例如: 39.90923</string>
+    <string name="hint_longitude">例如: 116.397428</string>
+    <string name="hint_address">例如: 北京市海淀区</string>
+    <string name="hint_name">例如: 张三</string>
+    
+    <string name="tip">修改配置后需要重启超星学习通才能生效</string>
+</resources>
