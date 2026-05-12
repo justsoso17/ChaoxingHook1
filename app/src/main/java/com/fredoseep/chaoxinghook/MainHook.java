@@ -28,6 +28,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam;
 public class MainHook implements IXposedHookLoadPackage {
 
     private static final Set<String> hookedWebViewClients = new HashSet<>();
+    private static final String FAKE_UPLOAD_FILE_PATH = "/storage/emulated/0/Download/fake_exam_image.png";
 
     // ===== 空间打击算法状态存储 =====
     static class LocationPoint {
@@ -89,7 +90,7 @@ public class MainHook implements IXposedHookLoadPackage {
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_CHAT_MANAGER_Q1, lpparam.classLoader), ObfuscationMap.METHOD_CHAT_MANAGER_C1, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result instanceof java.util.List) { java.util.List<?> list = (java.util.List<?>) result; for (int i = list.size() - 1; i >= 0; i--) { Object info = list.get(i); if (info != null && info.getClass().getSimpleName().equals("ConversationInfo")) { if ((Integer) XposedHelpers.callMethod(info, "getType") == 20) { list.remove(i); } } } } } }); } catch (Throwable t) {}
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_EM_CMD_MESSAGE_BODY, lpparam.classLoader), ObfuscationMap.METHOD_EM_CMD_ACTION, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result != null && "REVOKE_FLAG".equals(result.toString())) { param.setResult("BLOCK_REVOKE_FLAG"); } } }); } catch (Throwable t) {}
 
-        // 2. WebView 请求拦截 (回归平面解析算法)
+        // 2. WebView 请求拦截 (包含考试拦截回归与平面解析算法)
         try {
             Class<?> webViewClass = XposedHelpers.findClass("android.webkit.WebView", lpparam.classLoader);
             XposedBridge.hookAllMethods(webViewClass, "setWebViewClient", new XC_MethodHook() {
@@ -117,6 +118,43 @@ public class MainHook implements IXposedHookLoadPackage {
                                     }
                                 }
                                 if (url == null) return;
+
+                                // ==========================================
+                                // 【恢复核心】：考试风控拦截 (防切屏、防退出)
+                                // ==========================================
+                                if (url.startsWith("https://mooc1-api.chaoxing.com/keeper/api/receiveExamLogs") || url.contains("/exam-ans/exam/phone/exit-count")||url.contains("https://data-xxt.aichoxing.com/analysis/ac_event")) {
+                                    try {
+                                        Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
+                                        if (responseClass != null) {
+                                            String fakeResponse = "{\"status\":1,\"result\":true,\"msg\":\"success\",\"data\":null}";
+                                            innerParam.setResult(XposedHelpers.newInstance(
+                                                    responseClass,
+                                                    "application/json",
+                                                    "utf-8",
+                                                    new ByteArrayInputStream(fakeResponse.getBytes("UTF-8"))
+                                            ));
+                                        }
+                                    } catch (Exception e) {
+                                    }
+                                    return;
+                                }
+                                if (url.contains("notAllowCopy.css")) {
+                                    try {
+                                        Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
+                                        if (responseClass != null) {
+                                            // 直接返回一个空的 CSS 文件内容，废掉它的 user-select 限制
+                                            String emptyCss = "";
+                                            innerParam.setResult(XposedHelpers.newInstance(
+                                                    responseClass,
+                                                    "text/css",
+                                                    "utf-8",
+                                                    new java.io.ByteArrayInputStream(emptyCss.getBytes("UTF-8"))
+                                            ));
+                                            XposedBridge.log("Chaoxing AdSkip: 成功拦截 notAllowCopy.css，复制限制已解除！");
+                                        }
+                                    } catch (Exception e) {}
+                                    return;
+                                }
 
                                 if (url.contains("stuSignajax")) {
                                     SignConfig config = getSignConfig();
@@ -288,10 +326,51 @@ public class MainHook implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             XposedBridge.log("Chaoxing AdSkip Error (WebView Hook): " + t.getMessage());
         }
+
+        try {
+            XC_MethodHook fileReadHook = new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    if (param.args.length == 0 || param.args[0] == null) return;
+
+                    String path = "";
+                    if (param.args[0] instanceof java.io.File) {
+                        path = ((java.io.File) param.args[0]).getAbsolutePath();
+                    } else if (param.args[0] instanceof String) {
+                        path = (String) param.args[0];
+                    }
+                    if (path.isEmpty()) return;
+
+                    // 【精准狙击】：只拦截学习通这个特定的截图缓存目录下的图片读取！
+                    if (path.contains("/Android/data/com.chaoxing.mobile/cache/image/") &&
+                            (path.endsWith(".png") || path.endsWith(".jpg"))) {
+
+                        File fakeFile = new File(FAKE_UPLOAD_FILE_PATH);
+                        if (fakeFile.exists()) {
+                            // 实施掉包手术！
+                            if (param.args[0] instanceof java.io.File) {
+                                param.args[0] = fakeFile;
+                            } else {
+                                param.args[0] = FAKE_UPLOAD_FILE_PATH;
+                            }
+                            XposedBridge.log("Chaoxing [绝杀]: 抓到监考截图上传！已成功替换为自定义图片 -> 拦截原图: " + path);
+                        } else {
+                            XposedBridge.log("Chaoxing [警告]: 找不到自定义伪装图片，未执行替换！请检查路径: " + FAKE_UPLOAD_FILE_PATH);
+                        }
+                    }
+                }
+            };
+
+            // 监听所有打开文件流的动作
+            XposedBridge.hookAllConstructors(java.io.FileInputStream.class, fileReadHook);
+
+        } catch (Throwable t) {
+            XposedBridge.log("Chaoxing Error (File Replace Hook): " + t.getMessage());
+        }
     }
 
     // ==========================================================
-    // 回归：解析几何与局部切平面克莱姆法则（永远的神！）
+    // 回归：解析几何与局部切平面克莱姆法则
     // ==========================================================
     private double[] calculateTriangulation(List<LocationPoint> points) {
         if (points.size() < 3) return null;
