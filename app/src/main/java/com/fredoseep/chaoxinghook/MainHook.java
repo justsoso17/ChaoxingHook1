@@ -126,7 +126,7 @@ public class MainHook implements IXposedHookLoadPackage {
                                 // ==========================================
                                 // 【可配置】：考试风控拦截 (防切屏、防退出)
                                 // ==========================================
-                                if (getSignConfig().bypassExamCheat && (url.startsWith("https://mooc1-api.chaoxing.com/keeper/api/receiveExamLogs") || url.contains("/exam-ans/exam/phone/exit-count")||url.contains("https://data-xxt.aichoxing.com/analysis/ac_event"))) {
+                                if (getSignConfig().bypassExamCheat && (url.startsWith("https://mooc1-api.chaoxing.com/keeper/api/receiveExamLogs") || url.contains("/exam-ans/exam/phone/exit-count")||url.contains("https://data-xxt.aichoxing.com/analysis/ac_event")||url.contains("https://pan-yz.chaoxing.com/upload?uploadtype=examkeeper"))) {
                                     try {
                                         Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
                                         if (responseClass != null) {
