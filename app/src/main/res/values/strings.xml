@@ -6,9 +6,11 @@
     <string name="section_location_manual">手动定位修改</string>
     <string name="desc_location_manual">直接使用指定坐标替换签到位置</string>
     <string name="section_location_blast">经纬度爆破</string>
-    <string name="desc_location_blast">三点采样 + 三角定位算法，自动反推目标坐标</string>
+    <string name="desc_location_blast">三点采样 + 三角定位算法，自动反推目标坐标。初始经纬度留空则自动从请求中获取真实定位。</string>
     <string name="base_latitude">初始纬度</string>
     <string name="base_longitude">初始经度</string>
+    <string name="hint_latitude_blast">留空自动获取，也可手动指定</string>
+    <string name="hint_longitude_blast">留空自动获取，也可手动指定</string>
     <string name="section_address">地址设置</string>
     <string name="section_name">姓名设置</string>
     <string name="section_advanced">高级设置</string>

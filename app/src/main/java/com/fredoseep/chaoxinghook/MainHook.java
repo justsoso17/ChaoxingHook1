@@ -170,7 +170,13 @@ public class MainHook implements IXposedHookLoadPackage {
                                             sendLat = calculatedTarget[0];
                                             sendLon = calculatedTarget[1];
                                         } else {
-                                            double baseLat = 39.90923, baseLon = 116.397428;
+                                            double baseLat = 0, baseLon = 0;
+                                            try {
+                                                Matcher latMatcher = Pattern.compile("latitude=([^&]+)").matcher(url);
+                                                Matcher lonMatcher = Pattern.compile("longitude=([^&]+)").matcher(url);
+                                                if (latMatcher.find()) baseLat = Double.parseDouble(latMatcher.group(1));
+                                                if (lonMatcher.find()) baseLon = Double.parseDouble(lonMatcher.group(1));
+                                            } catch (Exception e) {}
                                             try {
                                                 if (!config.latitude.isEmpty()) baseLat = Double.parseDouble(config.latitude);
                                                 if (!config.longitude.isEmpty()) baseLon = Double.parseDouble(config.longitude);
