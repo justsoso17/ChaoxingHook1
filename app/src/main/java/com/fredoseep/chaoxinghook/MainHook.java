@@ -30,7 +30,9 @@ public class MainHook implements IXposedHookLoadPackage {
     private static final Set<String> hookedWebViewClients = new HashSet<>();
     private static final String FAKE_UPLOAD_FILE_PATH = "/storage/emulated/0/Download/fake_exam_image.png";
 
-    // ===== 空间打击算法状态存储 =====
+    // 核心修复：添加防重入标志，防止读取配置文件时触发无限递归死循环
+    private static final ThreadLocal<Boolean> READING_CONFIG = ThreadLocal.withInitial(() -> false);
+
     static class LocationPoint {
         double lat;
         double lon;
@@ -85,7 +87,6 @@ public class MainHook implements IXposedHookLoadPackage {
     public void handleLoadPackage(LoadPackageParam lpparam) throws Throwable {
         if (!lpparam.packageName.equals("com.chaoxing.mobile")) return;
 
-        // 1. 基础功能屏蔽
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_SPLASH_VIEW_MODEL, lpparam.classLoader), ObfuscationMap.METHOD_SPLASH_A, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { param.setResult(null); } }); } catch (Throwable t) {}
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_HOME_PAGE_HEADER, lpparam.classLoader), ObfuscationMap.METHOD_HOME_HEADER_G, new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam param) { if (param.args.length > 0) param.args[0] = null; } }); } catch (Throwable t) {}
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_CATEGORY_HOLDER, lpparam.classLoader), ObfuscationMap.METHOD_CATEGORY_HOLDER_O, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object viewHolder = param.thisObject; android.widget.TextView tvLeft = (android.widget.TextView) XposedHelpers.getObjectField(viewHolder, ObfuscationMap.FIELD_CATEGORY_HOLDER_TV_LEFT); if (tvLeft != null && tvLeft.getText() != null) { String title = tvLeft.getText().toString(); if (title.contains("推荐") || title.contains("Recommend")) { android.view.View itemView = (android.view.View) XposedHelpers.getObjectField(viewHolder, "itemView"); if (itemView != null) { itemView.setVisibility(android.view.View.GONE); android.view.ViewGroup.LayoutParams layoutParams = itemView.getLayoutParams(); layoutParams.height = 0; layoutParams.width = 0; itemView.setLayoutParams(layoutParams); } } } } }); } catch (Throwable t) {}
@@ -94,7 +95,6 @@ public class MainHook implements IXposedHookLoadPackage {
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_CHAT_MANAGER_Q1, lpparam.classLoader), ObfuscationMap.METHOD_CHAT_MANAGER_C1, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result instanceof java.util.List) { java.util.List<?> list = (java.util.List<?>) result; for (int i = list.size() - 1; i >= 0; i--) { Object info = list.get(i); if (info != null && info.getClass().getSimpleName().equals("ConversationInfo")) { if ((Integer) XposedHelpers.callMethod(info, "getType") == 20) { list.remove(i); } } } } } }); } catch (Throwable t) {}
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_EM_CMD_MESSAGE_BODY, lpparam.classLoader), ObfuscationMap.METHOD_EM_CMD_ACTION, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result != null && "REVOKE_FLAG".equals(result.toString())) { param.setResult("BLOCK_REVOKE_FLAG"); } } }); } catch (Throwable t) {}
 
-        // 2. WebView 请求拦截 (包含考试拦截回归与平面解析算法)
         try {
             Class<?> webViewClass = XposedHelpers.findClass("android.webkit.WebView", lpparam.classLoader);
             XposedBridge.hookAllMethods(webViewClass, "setWebViewClient", new XC_MethodHook() {
@@ -123,9 +123,6 @@ public class MainHook implements IXposedHookLoadPackage {
                                 }
                                 if (url == null) return;
 
-                                // ==========================================
-                                // 【可配置】：考试风控拦截 (防切屏、防退出)
-                                // ==========================================
                                 if (getSignConfig().bypassExamCheat && (url.startsWith("https://mooc1-api.chaoxing.com/keeper/api/receiveExamLogs") || url.contains("/exam-ans/exam/phone/exit-count")||url.contains("https://data-xxt.aichoxing.com/analysis/ac_event")||url.contains("pan-yz.chaoxing.com/upload"))) {
                                     try {
                                         Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
@@ -138,8 +135,7 @@ public class MainHook implements IXposedHookLoadPackage {
                                                     new ByteArrayInputStream(fakeResponse.getBytes("UTF-8"))
                                             ));
                                         }
-                                    } catch (Exception e) {
-                                    }
+                                    } catch (Exception e) {}
                                     return;
                                 }
                                 if (getSignConfig().enableCopyRestriction && url.contains("notAllowCopy.css")) {
@@ -256,12 +252,10 @@ public class MainHook implements IXposedHookLoadPackage {
                                                 double dist = Double.parseDouble(m.group(1));
 
                                                 if (calculatedTarget != null) {
-                                                    // 算出了结果依然有误差，清空目标靶心，但把最后打卡的点作为绝佳的局部基准点！
                                                     calculatedTarget = null;
                                                 }
 
                                                 historyPoints.add(new LocationPoint(sendLat, sendLon, dist));
-                                                // 防止内存和坐标点过多，只取最近的 3 个高价值点用于方程计算
                                                 if (historyPoints.size() > 3) {
                                                     historyPoints.remove(0);
                                                 }
@@ -308,7 +302,6 @@ public class MainHook implements IXposedHookLoadPackage {
                 }
             });
 
-            // 3. WebView 底层 JS 自动化动态指纹注入
             XC_MethodHook jsInterceptHook = new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
@@ -340,9 +333,6 @@ public class MainHook implements IXposedHookLoadPackage {
             XC_MethodHook fileReadHook = new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                    SignConfig config = getSignConfig();
-                    if (!config.replaceExamScreenshot) return;
-
                     if (param.args.length == 0 || param.args[0] == null) return;
 
                     String path = "";
@@ -353,21 +343,26 @@ public class MainHook implements IXposedHookLoadPackage {
                     }
                     if (path.isEmpty()) return;
 
-                    if (path.contains("/Android/data/com.chaoxing.mobile/cache/image/") &&
-                            (path.endsWith(".png") || path.endsWith(".jpg"))) {
+                    // 核心修复：前置过滤。如果不是目标文件，绝对不调用 getSignConfig()，从根源斩断递归
+                    if (!path.contains("/Android/data/com.chaoxing.mobile/cache/image/") ||
+                            (!path.endsWith(".png") && !path.endsWith(".jpg"))) {
+                        return;
+                    }
 
-                        String imagePath = config.fakeImagePath.isEmpty() ? FAKE_UPLOAD_FILE_PATH : config.fakeImagePath;
-                        File fakeFile = new File(imagePath);
-                        if (fakeFile.exists()) {
-                            if (param.args[0] instanceof java.io.File) {
-                                param.args[0] = fakeFile;
-                            } else {
-                                param.args[0] = imagePath;
-                            }
-                            XposedBridge.log("Chaoxing [绝杀]: 抓到监考截图上传！已成功替换为自定义图片 -> 拦截原图: " + path);
+                    SignConfig config = getSignConfig();
+                    if (!config.replaceExamScreenshot) return;
+
+                    String imagePath = config.fakeImagePath.isEmpty() ? FAKE_UPLOAD_FILE_PATH : config.fakeImagePath;
+                    File fakeFile = new File(imagePath);
+                    if (fakeFile.exists()) {
+                        if (param.args[0] instanceof java.io.File) {
+                            param.args[0] = fakeFile;
                         } else {
-                            XposedBridge.log("Chaoxing [警告]: 找不到自定义伪装图片，未执行替换！请检查路径: " + imagePath);
+                            param.args[0] = imagePath;
                         }
+                        XposedBridge.log("Chaoxing [绝杀]: 抓到监考截图上传！已成功替换为自定义图片 -> 拦截原图: " + path);
+                    } else {
+                        XposedBridge.log("Chaoxing [警告]: 找不到自定义伪装图片，未执行替换！请检查路径: " + imagePath);
                     }
                 }
             };
@@ -377,13 +372,10 @@ public class MainHook implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             XposedBridge.log("Chaoxing Error (File Replace Hook): " + t.getMessage());
         }
-        // ==========================================
-        // 【核弹级斩首】：直接拦截 JS 协议层，彻底切断截图上传并伪造成功回调
-        // ==========================================
+
         try {
-            // 精准狙击你找到的这个 f1 类的 q0 方法
             XposedHelpers.findAndHookMethod(
-                    "com.chaoxing.mobile.webapp.jsprotocal.common.f1", // 注意：如果你更新了版本，这个 f1 类名如果变了，需要跟着改
+                    "com.chaoxing.mobile.webapp.jsprotocal.common.f1",
                     lpparam.classLoader,
                     "q0",
                     File.class,
@@ -391,19 +383,9 @@ public class MainHook implements IXposedHookLoadPackage {
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                             XposedBridge.log("Chaoxing [终极斩杀]: 成功拦截 f1.q0，ExamKeeper 截图上传已被物理蒸发！");
-
                             Object f1Instance = param.thisObject;
-
-                            // 1. 反射调用 f1 类的 f0 方法。
-                            // 源码里是：f0(int status, CloudDiskFile1 cloudDiskFile)
-                            // 传入 status = 1 (代表成功)，文件对象传 null，生成一段虚假的成功 JSON
                             String fakeSuccessJson = (String) XposedHelpers.callMethod(f1Instance, "f0", 1, null);
-
-                            // 2. 反射调用父类的 r 方法，把假 JSON 传回给网页前端
-                            // 第一个参数是协议名 B ("CLIENT_SNAPSHOT")，第二个是生成的 JSON
                             XposedHelpers.callMethod(f1Instance, "r", "CLIENT_SNAPSHOT", fakeSuccessJson);
-
-                            // 3. 截断方法：设置 setResult(null) 后，原方法 q0 里的上传代码将彻底不被执行！
                             param.setResult(null);
                         }
                     }
@@ -413,9 +395,6 @@ public class MainHook implements IXposedHookLoadPackage {
         }
     }
 
-    // ==========================================================
-    // 回归：解析几何与局部切平面克莱姆法则
-    // ==========================================================
     private double[] calculateTriangulation(List<LocationPoint> points) {
         if (points.size() < 3) return null;
 
@@ -446,9 +425,7 @@ public class MainHook implements IXposedHookLoadPackage {
         double F = r1 * r1 - r3 * r3 + x3 * x3 + y3 * y3;
 
         double det = A * E - B * D;
-        if (Math.abs(det) < 1.0) {
-            return null; // 共线无解
-        }
+        if (Math.abs(det) < 1.0) return null;
 
         double targetX = (C * E - B * F) / det;
         double targetY = (A * F - C * D) / det;
@@ -472,46 +449,56 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     private SignConfig getSignConfig() {
+        // 核心修复：防止底层死循环读取
+        if (Boolean.TRUE.equals(READING_CONFIG.get())) {
+            return cachedConfig != null ? cachedConfig : new SignConfig();
+        }
+
         if (cachedConfig != null && (System.currentTimeMillis() - lastReadTime < 3000)) return cachedConfig;
 
-        SignConfig config = new SignConfig();
-        File file = new File("/storage/emulated/0/Android/data/com.chaoxing.mobile/files/chaoxing_loc.txt");
+        READING_CONFIG.set(true);
+        try {
+            SignConfig config = new SignConfig();
+            File file = new File("/storage/emulated/0/Android/data/com.chaoxing.mobile/files/chaoxing_loc.txt");
 
-        if (!file.exists()) {
-            try {
-                file.getParentFile().mkdirs();
-                FileWriter fw = new FileWriter(file);
-                fw.write("是否开启定位修改: false\n经度: \n纬度: \n是否开启地址名修改: false\n地址名: \n是否开启名字修改: false\n名字: \n是否开启随机指纹: true\n是否开启经纬度爆破: false\n是否开启考试风控拦截: true\n是否开启复制限制解除: true\n是否开启考试截图替换: false\n截图替换路径: " + FAKE_UPLOAD_FILE_PATH + "\n");
-                fw.close();
+            if (!file.exists()) {
+                try {
+                    file.getParentFile().mkdirs();
+                    FileWriter fw = new FileWriter(file);
+                    fw.write("是否开启定位修改: false\n经度: \n纬度: \n是否开启地址名修改: false\n地址名: \n是否开启名字修改: false\n名字: \n是否开启随机指纹: true\n是否开启经纬度爆破: false\n是否开启考试风控拦截: true\n是否开启复制限制解除: true\n是否开启考试截图替换: false\n截图替换路径: " + FAKE_UPLOAD_FILE_PATH + "\n");
+                    fw.close();
+                } catch (Exception e) {}
+                cachedConfig = config;
+                lastReadTime = System.currentTimeMillis();
+                return config;
+            }
+
+            try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    line = line.trim();
+                    if (line.startsWith("是否开启定位修改:")) config.modifyLocation = parseBooleanValue(line);
+                    else if (line.startsWith("经度:")) config.longitude = parseStringValue(line);
+                    else if (line.startsWith("纬度:")) config.latitude = parseStringValue(line);
+                    else if (line.startsWith("是否开启地址名修改:")) config.modifyAddress = parseBooleanValue(line);
+                    else if (line.startsWith("地址名:")) config.address = parseStringValue(line);
+                    else if (line.startsWith("是否开启名字修改:")) config.modifyName = parseBooleanValue(line);
+                    else if (line.startsWith("名字:")) config.name = parseStringValue(line);
+                    else if (line.startsWith("是否开启随机指纹:")) config.randomizeDeviceFlag = parseBooleanValue(line);
+                    else if (line.startsWith("是否开启经纬度爆破:")) config.autoCalculateLocation = parseBooleanValue(line);
+                    else if (line.startsWith("是否开启考试风控拦截:")) config.bypassExamCheat = parseBooleanValue(line);
+                    else if (line.startsWith("是否开启复制限制解除:")) config.enableCopyRestriction = parseBooleanValue(line);
+                    else if (line.startsWith("是否开启考试截图替换:")) config.replaceExamScreenshot = parseBooleanValue(line);
+                    else if (line.startsWith("截图替换路径:")) config.fakeImagePath = parseStringValue(line);
+                }
             } catch (Exception e) {}
+
             cachedConfig = config;
             lastReadTime = System.currentTimeMillis();
             return config;
+        } finally {
+            READING_CONFIG.set(false);
         }
-
-        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                line = line.trim();
-                if (line.startsWith("是否开启定位修改:")) config.modifyLocation = parseBooleanValue(line);
-                else if (line.startsWith("经度:")) config.longitude = parseStringValue(line);
-                else if (line.startsWith("纬度:")) config.latitude = parseStringValue(line);
-                else if (line.startsWith("是否开启地址名修改:")) config.modifyAddress = parseBooleanValue(line);
-                else if (line.startsWith("地址名:")) config.address = parseStringValue(line);
-                else if (line.startsWith("是否开启名字修改:")) config.modifyName = parseBooleanValue(line);
-                else if (line.startsWith("名字:")) config.name = parseStringValue(line);
-                else if (line.startsWith("是否开启随机指纹:")) config.randomizeDeviceFlag = parseBooleanValue(line);
-                else if (line.startsWith("是否开启经纬度爆破:")) config.autoCalculateLocation = parseBooleanValue(line);
-                else if (line.startsWith("是否开启考试风控拦截:")) config.bypassExamCheat = parseBooleanValue(line);
-                else if (line.startsWith("是否开启复制限制解除:")) config.enableCopyRestriction = parseBooleanValue(line);
-                else if (line.startsWith("是否开启考试截图替换:")) config.replaceExamScreenshot = parseBooleanValue(line);
-                else if (line.startsWith("截图替换路径:")) config.fakeImagePath = parseStringValue(line);
-            }
-        } catch (Exception e) {}
-
-        cachedConfig = config;
-        lastReadTime = System.currentTimeMillis();
-        return config;
     }
 
     private boolean parseBooleanValue(String line) {
