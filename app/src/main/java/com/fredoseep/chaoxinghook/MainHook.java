@@ -95,11 +95,139 @@ public class MainHook implements IXposedHookLoadPackage {
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_CHAT_MANAGER_Q1, lpparam.classLoader), ObfuscationMap.METHOD_CHAT_MANAGER_C1, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result instanceof java.util.List) { java.util.List<?> list = (java.util.List<?>) result; for (int i = list.size() - 1; i >= 0; i--) { Object info = list.get(i); if (info != null && info.getClass().getSimpleName().equals("ConversationInfo")) { if ((Integer) XposedHelpers.callMethod(info, "getType") == 20) { list.remove(i); } } } } } }); } catch (Throwable t) {}
         try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_EM_CMD_MESSAGE_BODY, lpparam.classLoader), ObfuscationMap.METHOD_EM_CMD_ACTION, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result != null && "REVOKE_FLAG".equals(result.toString())) { param.setResult("BLOCK_REVOKE_FLAG"); } } }); } catch (Throwable t) {}
 
+
+// ==========================================
+        // 【第一道防线】：精准阉割原生播放器的异常行为上报
+        // ==========================================
+        try {
+            Class<?> fragmentClass = XposedHelpers.findClassIfExists("com.chaoxing.mobile.player.course.CoursePlayerFragment", lpparam.classLoader);
+            if (fragmentClass != null) {
+
+                // 1. 物理斩杀“拖拽汇报” (Pa)
+                XposedHelpers.findAndHookMethod(fragmentClass, "Pa", int.class, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        param.setResult(null); // 强制返回，阻断拖拽记录发往服务器
+                        XposedBridge.log("Chaoxing [物理超度]: 成功拦截 拖拽行为 上报 (Pa)");
+                    }
+                });
+
+                // 2. 物理斩杀“暂停汇报” (Wa)
+                XposedHelpers.findAndHookMethod(fragmentClass, "Wa", new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        param.setResult(null); // 强制返回
+                        XposedBridge.log("Chaoxing [物理超度]: 成功拦截 暂停/切后台行为 上报 (Wa)");
+                    }
+                });
+
+                // 注意：彻底移除了之前错误拦截 Ra (导致无法提交完成) 的代码！
+            }
+        } catch (Throwable t) {
+            XposedBridge.log("Chaoxing Error (Fragment Hook): " + t.getMessage());
+        }
+
+        // ==========================================
+        // 【第二道防线】：绝对防御，无视服务器的进度回退指令
+        // ==========================================
+        try {
+            Class<?> dotResClass = XposedHelpers.findClassIfExists("com.chaoxing.mobile.player.course.model.CourseDotRes", lpparam.classLoader);
+            if (dotResClass != null) {
+                XposedHelpers.findAndHookMethod(dotResClass, "isRollbackStatus", new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        // 如果服务器发现了进度跳跃要求回退，到了手机内存里统统变成 false (不回退)！
+                        if ((Boolean) param.getResult()) {
+                            param.setResult(false);
+                            XposedBridge.log("Chaoxing [防回退]: 成功没收服务器的进度回退指令！");
+                        }
+                    }
+                });
+            }
+        } catch (Throwable t) {
+            XposedBridge.log("Chaoxing Error (Rollback Hook): " + t.getMessage());
+        }
         try {
             Class<?> webViewClass = XposedHelpers.findClass("android.webkit.WebView", lpparam.classLoader);
             XposedBridge.hookAllMethods(webViewClass, "setWebViewClient", new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    Object webViewObj = param.thisObject;
+
+                    // ==========================================
+                    // 【精确狙击】：强行接管 WebView 长按事件，注入极客专属下载菜单！
+                    // ==========================================
+                    if (webViewObj instanceof android.webkit.WebView) {
+                        final android.webkit.WebView webView = (android.webkit.WebView) webViewObj;
+
+                        // 覆盖可能存在的原有长按逻辑
+                        webView.setOnLongClickListener(new android.view.View.OnLongClickListener() {
+                            @Override
+                            public boolean onLongClick(android.view.View v) {
+                                // 探针：获取手指按压位置的内容类型
+                                final android.webkit.WebView.HitTestResult result = webView.getHitTestResult();
+                                if (result != null) {
+                                    int type = result.getType();
+
+                                    // 如果长按的是 纯图片 或 带有链接的图片
+                                    if (type == android.webkit.WebView.HitTestResult.IMAGE_TYPE ||
+                                            type == android.webkit.WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+
+                                        final String imageUrl = result.getExtra();
+                                        if (imageUrl != null && imageUrl.startsWith("http")) {
+
+                                            // 呼叫 Android 原生系统弹窗
+                                            android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(webView.getContext());
+                                            builder.setTitle("chaoxingHook: ");
+                                            builder.setMessage("锁定目标图片，是否执行下载？\n\n" + imageUrl);
+                                            builder.setPositiveButton("立即下载", new android.content.DialogInterface.OnClickListener() {
+                                                @Override
+                                                public void onClick(android.content.DialogInterface dialog, int which) {
+                                                    // 用户点击下载，开启后台线程拉取文件
+                                                    new Thread(() -> {
+                                                        try {
+                                                            File dir = new File("/storage/emulated/0/Download/ChaoxingExam");
+                                                            if (!dir.exists()) dir.mkdirs();
+
+                                                            String fileName = "IMG_" + System.currentTimeMillis() + ".png";
+                                                            String[] parts = imageUrl.split("/");
+                                                            if (parts.length > 5) {
+                                                                fileName = parts[parts.length - 2] + "_" + parts[parts.length - 1];
+                                                                if (fileName.contains("?")) fileName = fileName.substring(0, fileName.indexOf("?"));
+                                                            }
+
+                                                            File saveFile = new File(dir, fileName);
+
+                                                            URL targetUrl = new URL(imageUrl);
+                                                            HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
+                                                            conn.setRequestMethod("GET");
+                                                            InputStream is = conn.getInputStream();
+                                                            java.io.FileOutputStream fos = new java.io.FileOutputStream(saveFile);
+                                                            byte[] buf = new byte[4096];
+                                                            int len;
+                                                            while ((len = is.read(buf)) != -1) fos.write(buf, 0, len);
+                                                            fos.close();
+                                                            is.close();
+
+                                                            // 可选：在这里可以用 Looper 抛出一个 Toast 提示下载完成
+                                                            XposedBridge.log("Chaoxing [精准打击]: 图片已成功降维至本地 -> " + saveFile.getAbsolutePath());
+                                                        } catch (Exception e) {
+                                                            XposedBridge.log("Chaoxing Error: " + e.getMessage());
+                                                        }
+                                                    }).start();
+                                                }
+                                            });
+                                            builder.setNegativeButton("取消", null);
+                                            builder.show(); // 弹出对话框
+
+                                            return true; // 返回 true 代表我们消费了这个长按动作，拦截原本的事件传递
+                                        }
+                                    }
+                                }
+                                return false; // 如果长按的不是图片，原样放行，不影响网页滑动或系统功能
+                            }
+                        });
+                    }
                     Object webViewClient = param.args[0];
                     if (webViewClient == null) return;
                     Class<?> clientClass = webViewClient.getClass();
@@ -123,6 +251,81 @@ public class MainHook implements IXposedHookLoadPackage {
                                 }
                                 if (url == null) return;
 
+                                // ==========================================
+                                // 【明文调参测试】：劫持 H5 小报告，重组明文时间参数
+                                // ==========================================
+                                if (url.contains("/multimedia/log/a/")) {
+                                    try {
+                                        String newUrl = url;
+
+                                        // 1. 提取视频总长度 duration
+                                        Pattern durationPattern = Pattern.compile("duration=(\\d+)");
+                                        Matcher durationMatcher = durationPattern.matcher(url);
+                                        if (durationMatcher.find()) {
+                                            String durationVal = durationMatcher.group(1);
+                                            long durationSeconds = Long.parseLong(durationVal);
+
+                                            // 2. 强行将当前进度 playingTime 填满，伪装成已看完
+                                            newUrl = newUrl.replaceAll("playingTime=\\d+", "playingTime=" + durationVal);
+                                            newUrl = newUrl.replaceAll("clipTime=[^&]*", "clipTime=0_" + durationVal);
+
+                                            // 3. 关键：将客户端时间戳 cxtime 往未来平移一个视频总长度（毫秒），模拟真实的物理观看耗时
+                                            Pattern cxTimePattern = Pattern.compile("cxtime=(\\d+)");
+                                            Matcher cxTimeMatcher = cxTimePattern.matcher(url);
+                                            if (cxTimeMatcher.find()) {
+                                                long originalCxTime = Long.parseLong(cxTimeMatcher.group(1));
+                                                long fakeCxTime = originalCxTime + (durationSeconds * 1000);
+                                                newUrl = newUrl.replaceAll("cxtime=\\d+", "cxtime=" + fakeCxTime);
+                                            }
+                                        }
+
+                                        // 4. 调整行为标记 isdrag
+                                        // 可以测试改为 0 (伪装成最安全的常规播放心跳)
+                                        // 如果不行，也可以手动改成 4 (完播标记) 看看后端更认哪一个
+                                        newUrl = newUrl.replaceAll("isdrag=\\d+", "isdrag=0");
+
+                                        XposedBridge.log("Chaoxing [调参测试] 原始 URL: " + url);
+                                        XposedBridge.log("Chaoxing [调参测试] 篡改 URL: " + newUrl);
+
+                                        // 5. 拿着调参后的新 URL 代替前端向服务器发包
+                                        URL targetUrl = new URL(newUrl);
+                                        HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
+                                        conn.setRequestMethod("GET");
+
+                                        String cookie = android.webkit.CookieManager.getInstance().getCookie(url);
+                                        if (cookie != null) conn.setRequestProperty("Cookie", cookie);
+                                        conn.setRequestProperty("Accept-Encoding", "gzip");
+
+                                        InputStream is = conn.getInputStream();
+                                        String encoding = conn.getContentEncoding();
+                                        if (encoding != null && encoding.toLowerCase().contains("gzip")) {
+                                            is = new java.util.zip.GZIPInputStream(is);
+                                        }
+
+                                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                        byte[] buffer = new byte[4096];
+                                        int len;
+                                        while ((len = is.read(buffer)) != -1) baos.write(buffer, 0, len);
+                                        String jsonStr = new String(baos.toByteArray(), "UTF-8");
+
+                                        XposedBridge.log("Chaoxing [调参测试] 服务器返回: " + jsonStr);
+
+                                        // 6. 将服务器的原始回应直接丢回给前端 WebView
+                                        Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
+                                        if (responseClass != null) {
+                                            innerParam.setResult(XposedHelpers.newInstance(
+                                                    responseClass,
+                                                    "application/json",
+                                                    "utf-8",
+                                                    new ByteArrayInputStream(jsonStr.getBytes("UTF-8"))
+                                            ));
+                                        }
+                                        return; // 阻断原请求
+                                    } catch (Exception e) {
+                                        XposedBridge.log("Chaoxing Error (Param Tweak): " + e.getMessage());
+                                    }
+                                }
+
                                 if (getSignConfig().bypassExamCheat && (url.startsWith("https://mooc1-api.chaoxing.com/keeper/api/receiveExamLogs") || url.contains("/exam-ans/exam/phone/exit-count")||url.contains("https://data-xxt.aichoxing.com/analysis/ac_event")||url.contains("pan-yz.chaoxing.com/upload"))) {
                                     try {
                                         Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
@@ -138,6 +341,105 @@ public class MainHook implements IXposedHookLoadPackage {
                                     } catch (Exception e) {}
                                     return;
                                 }
+                                // ==========================================
+                                // 【终极网课解锁】：拦截课程源头，暴力篡改视频限制参数 (兼容实体转义)
+                                // ==========================================
+                                // 扩大匹配范围，涵盖 JSON 源头和 HTML 框架
+                                if (url.contains("knowledge/cards") || url.contains("richvideo/initdatawithviewer") || url.contains("studentstudy")) {
+                                    try {
+                                        URL targetUrl = new URL(url);
+                                        HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
+
+                                        // 复制原请求的方法与 Header
+                                        if (requestObj != null) {
+                                            conn.setRequestMethod((String) XposedHelpers.callMethod(requestObj, "getMethod"));
+                                            @SuppressWarnings("unchecked")
+                                            Map<String, String> headers = (Map<String, String>) XposedHelpers.callMethod(requestObj, "getRequestHeaders");
+                                            if (headers != null) {
+                                                for (Map.Entry<String, String> entry : headers.entrySet()) {
+                                                    if (!entry.getKey().equalsIgnoreCase("Accept-Encoding")) {
+                                                        conn.setRequestProperty(entry.getKey(), entry.getValue());
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            conn.setRequestMethod("GET");
+                                        }
+
+                                        // 同步 Cookie 证明合法登录，并请求 GZIP 压缩
+                                        String cookie = android.webkit.CookieManager.getInstance().getCookie(url);
+                                        if (cookie != null) {
+                                            conn.setRequestProperty("Cookie", cookie);
+                                        }
+                                        conn.setRequestProperty("Accept-Encoding", "gzip");
+
+                                        // 解除 GZIP 封印，获取明文流
+                                        InputStream is = conn.getInputStream();
+                                        String encoding = conn.getContentEncoding();
+                                        if (encoding != null && encoding.toLowerCase().contains("gzip")) {
+                                            is = new java.util.zip.GZIPInputStream(is);
+                                        }
+
+                                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                        byte[] buffer = new byte[4096];
+                                        int len;
+                                        while ((len = is.read(buffer)) != -1) {
+                                            baos.write(buffer, 0, len);
+                                        }
+                                        String htmlStr = new String(baos.toByteArray(), "UTF-8");
+
+                                        // ================= 实施终极基因改造 =================
+                                        if (htmlStr.contains("fastforward") || htmlStr.contains("doublespeed")) {
+                                            htmlStr = htmlStr
+                                                    // 1. 彻底解除快进限制
+                                                    .replace("\"fastforward\":\"true\"", "\"fastforward\":\"false\"")
+                                                    .replace("\"fastforward\":true", "\"fastforward\":false")
+                                                    .replace("&quot;fastforward&quot;:&quot;true&quot;", "&quot;fastforward&quot;:&quot;false&quot;")
+                                                    .replace("&quot;fastforward&quot;:true", "&quot;fastforward&quot;:false")
+
+                                                    // 2. 修复倍速误伤：超星中1是开启，0是关闭，我们要强制改为1！
+                                                    .replace("\"doublespeed\":0", "\"doublespeed\":1")
+                                                    .replace("\"doublespeed\":\"0\"", "\"doublespeed\":\"1\"")
+                                                    .replace("&quot;doublespeed&quot;:0", "&quot;doublespeed&quot;:1")
+                                                    .replace("&quot;doublespeed&quot;:&quot;0&quot;", "&quot;doublespeed&quot;:&quot;1&quot;")
+
+                                                    // 3. 解除切屏暂停
+                                                    .replace("\"switchwindow\":\"true\"", "\"switchwindow\":\"false\"")
+                                                    .replace("\"switchwindow\":true", "\"switchwindow\":false")
+                                                    .replace("&quot;switchwindow&quot;:&quot;true&quot;", "&quot;switchwindow&quot;:&quot;false&quot;")
+                                                    .replace("&quot;switchwindow&quot;:true", "&quot;switchwindow&quot;:false");
+
+                                            htmlStr = htmlStr.replace("var forbidImgClick = \"true\";", "var forbidImgClick = \"false\";");
+
+                                            XposedBridge.log("Chaoxing [网课解锁]: 成功篡改最底层视频限制参数，快进、倍速均已完全自由！");
+                                        }
+
+                                        // ================= 重新打包返回 =================
+                                        Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
+                                        if (responseClass != null) {
+                                            String contentType = conn.getContentType();
+                                            String mimeType = "text/html";
+                                            String charset = "utf-8";
+                                            if (contentType != null) {
+                                                String[] parts = contentType.split(";");
+                                                mimeType = parts[0].trim();
+                                                if (parts.length > 1 && parts[1].toLowerCase().contains("charset=")) {
+                                                    charset = parts[1].split("=")[1].trim();
+                                                }
+                                            }
+                                            innerParam.setResult(XposedHelpers.newInstance(
+                                                    responseClass,
+                                                    mimeType,
+                                                    charset,
+                                                    new ByteArrayInputStream(htmlStr.getBytes(charset))
+                                            ));
+                                        }
+                                        return; // 结束，原请求不再发出
+                                    } catch (Exception e) {
+                                        XposedBridge.log("Chaoxing Error (Video Unlock): " + e.getMessage());
+                                    }
+                                }
+
                                 if (getSignConfig().enableCopyRestriction && url.contains("notAllowCopy.css")) {
                                     try {
                                         Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
