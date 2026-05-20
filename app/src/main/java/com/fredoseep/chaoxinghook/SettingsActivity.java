@@ -1,6 +1,7 @@
 package com.fredoseep.chaoxinghook;
 
 import android.os.Bundle;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -45,6 +46,17 @@ public class SettingsActivity extends AppCompatActivity {
     private static final String CONFIG_PATH = "/storage/emulated/0/Android/data/com.chaoxing.mobile/files/chaoxing_loc.txt";
 
     @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+            View currentFocus = getCurrentFocus();
+            if (currentFocus instanceof EditText) {
+                currentFocus.clearFocus();
+            }
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
@@ -52,6 +64,15 @@ public class SettingsActivity extends AppCompatActivity {
         initViews();
         loadConfig();
         setupListeners();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        View currentFocus = getCurrentFocus();
+        if (currentFocus instanceof EditText) {
+            saveConfig();
+        }
     }
 
     private void initViews() {
@@ -83,8 +104,12 @@ public class SettingsActivity extends AppCompatActivity {
         LinearLayout btnSave = findViewById(R.id.btn_save);
         LinearLayout btnReset = findViewById(R.id.btn_reset);
 
-        btnSave.setOnClickListener(v -> saveConfig());
+        btnSave.setVisibility(View.GONE);
         btnReset.setOnClickListener(v -> resetConfig());
+        LinearLayout.LayoutParams resetParams = (LinearLayout.LayoutParams) btnReset.getLayoutParams();
+        resetParams.width = LinearLayout.LayoutParams.MATCH_PARENT;
+        resetParams.setMargins(0, resetParams.topMargin, 0, resetParams.bottomMargin);
+        btnReset.setLayoutParams(resetParams);
     }
 
     private void setupListeners() {
@@ -94,14 +119,17 @@ public class SettingsActivity extends AppCompatActivity {
             }
             layoutLatitude.setVisibility(isChecked ? View.VISIBLE : View.GONE);
             layoutLongitude.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+            saveConfig();
         });
 
         switchAddressModify.setOnCheckedChangeListener((buttonView, isChecked) -> {
             layoutAddress.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+            saveConfig();
         });
 
         switchNameModify.setOnCheckedChangeListener((buttonView, isChecked) -> {
             layoutName.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+            saveConfig();
         });
 
         switchAutoCalculate.setOnCheckedChangeListener((buttonView, isChecked) -> {
@@ -110,11 +138,28 @@ public class SettingsActivity extends AppCompatActivity {
             }
             layoutLatitudeBlast.setVisibility(isChecked ? View.VISIBLE : View.GONE);
             layoutLongitudeBlast.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+            saveConfig();
         });
 
         switchExamScreenshotReplace.setOnCheckedChangeListener((buttonView, isChecked) -> {
             layoutScreenshotPath.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+            saveConfig();
         });
+
+        switchRandomDeviceFlag.setOnCheckedChangeListener((buttonView, isChecked) -> saveConfig());
+        switchExamCheatBypass.setOnCheckedChangeListener((buttonView, isChecked) -> saveConfig());
+        switchCopyRestriction.setOnCheckedChangeListener((buttonView, isChecked) -> saveConfig());
+
+        View.OnFocusChangeListener focusSaveListener = (v, hasFocus) -> {
+            if (!hasFocus) saveConfig();
+        };
+        etLatitude.setOnFocusChangeListener(focusSaveListener);
+        etLongitude.setOnFocusChangeListener(focusSaveListener);
+        etLatitudeBlast.setOnFocusChangeListener(focusSaveListener);
+        etLongitudeBlast.setOnFocusChangeListener(focusSaveListener);
+        etAddress.setOnFocusChangeListener(focusSaveListener);
+        etName.setOnFocusChangeListener(focusSaveListener);
+        etScreenshotPath.setOnFocusChangeListener(focusSaveListener);
     }
 
     private void loadConfig() {
@@ -123,10 +168,6 @@ public class SettingsActivity extends AppCompatActivity {
             createDefaultConfig();
             return;
         }
-
-        switchExamCheatBypass.setChecked(true);
-        switchCopyRestriction.setChecked(true);
-        switchExamScreenshotReplace.setChecked(false);
 
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
             String line;
@@ -228,10 +269,10 @@ public class SettingsActivity extends AppCompatActivity {
         switchLocationModify.setChecked(false);
         switchAddressModify.setChecked(false);
         switchNameModify.setChecked(false);
-        switchRandomDeviceFlag.setChecked(true);
+        switchRandomDeviceFlag.setChecked(false);
         switchAutoCalculate.setChecked(false);
-        switchExamCheatBypass.setChecked(true);
-        switchCopyRestriction.setChecked(true);
+        switchExamCheatBypass.setChecked(false);
+        switchCopyRestriction.setChecked(false);
         switchExamScreenshotReplace.setChecked(false);
 
         etLatitude.setText("");
@@ -260,12 +301,12 @@ public class SettingsActivity extends AppCompatActivity {
                 "地址名: \n" +
                 "是否开启名字修改: false\n" +
                 "名字: \n" +
-                "是否开启随机指纹: true\n" +
+                "是否开启随机指纹: false\n" +
                 "是否开启经纬度爆破: false\n" +
-                "是否开启考试风控拦截: true\n" +
-                "是否开启复制限制解除: true\n" +
+                "是否开启考试风控拦截: false\n" +
+                "是否开启复制限制解除: false\n" +
                 "是否开启考试截图替换: false\n" +
-                "截图替换路径: /storage/emulated/0/Download/fake_exam_image.png\n";
+                "截图替换路径: \n";
         
         writeFileWithRoot(CONFIG_PATH, defaultConfig);
     }
