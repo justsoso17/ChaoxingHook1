@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- iOS tinted button -->
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
-    android:color="#40FFFFFF">
+    android:color="#40007AFF">
     <item>
         <shape>
-            <gradient
-                android:startColor="@color/fg_gradient_start"
-                android:endColor="@color/fg_gradient_end"
-                android:angle="135" />
-            <corners android:radius="14dp" />
+            <solid android:color="@color/ios_tint" />
+            <corners android:radius="12dp" />
         </shape>
     </item>
 </ripple>

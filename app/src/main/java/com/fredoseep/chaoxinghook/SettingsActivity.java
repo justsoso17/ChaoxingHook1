@@ -4,7 +4,6 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.view.MotionEvent;
 import android.view.View;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Switch;
@@ -110,6 +109,15 @@ public class SettingsActivity extends AppCompatActivity {
 
         btnMapPick = findViewById(R.id.btn_map_pick);
         btnMapPickBlast = findViewById(R.id.btn_map_pick_blast);
+
+        // Clear buttons
+        findViewById(R.id.btn_clear_latitude).setOnClickListener(v -> etLatitude.setText(""));
+        findViewById(R.id.btn_clear_longitude).setOnClickListener(v -> etLongitude.setText(""));
+        findViewById(R.id.btn_clear_latitude_blast).setOnClickListener(v -> etLatitudeBlast.setText(""));
+        findViewById(R.id.btn_clear_longitude_blast).setOnClickListener(v -> etLongitudeBlast.setText(""));
+        findViewById(R.id.btn_clear_address).setOnClickListener(v -> etAddress.setText(""));
+        findViewById(R.id.btn_clear_name).setOnClickListener(v -> etName.setText(""));
+        findViewById(R.id.btn_clear_screenshot_path).setOnClickListener(v -> etScreenshotPath.setText(""));
 
         LinearLayout btnSave = findViewById(R.id.btn_save);
         LinearLayout btnReset = findViewById(R.id.btn_reset);

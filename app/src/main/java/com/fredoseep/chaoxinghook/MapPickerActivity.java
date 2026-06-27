@@ -25,6 +25,7 @@ import com.amap.api.maps.CameraUpdateFactory;
 import com.amap.api.maps.MapView;
 import com.amap.api.maps.MapsInitializer;
 import com.amap.api.maps.model.LatLng;
+import com.amap.api.maps.model.MarkerOptions;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -51,6 +52,7 @@ public class MapPickerActivity extends AppCompatActivity {
     private TextView tvHint;
     private LinearLayout layoutSuggestions;
     private LatLng selectedLatLng;
+    private long lastClickTime;
     private boolean ignoreTextChange;
     private float touchDownX, touchDownY;
     private long touchDownTime;
@@ -100,19 +102,27 @@ public class MapPickerActivity extends AppCompatActivity {
             aMap.getUiSettings().setZoomControlsEnabled(false);
             aMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(39.90923, 116.397428), 15));
 
+            // Reliable click on normal map areas
+            aMap.setOnMapClickListener(this::onMapClick);
+
+            // Fallback for POI-colored regions where OnMapClick doesn't fire
             mapView.setOnTouchListener((v, event) -> {
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        touchDownX = event.getX();
-                        touchDownY = event.getY();
+                        touchDownX = event.getRawX();
+                        touchDownY = event.getRawY();
                         touchDownTime = System.currentTimeMillis();
                         break;
                     case MotionEvent.ACTION_UP:
-                        float dx = event.getX() - touchDownX;
-                        float dy = event.getY() - touchDownY;
+                        float dx = event.getRawX() - touchDownX;
+                        float dy = event.getRawY() - touchDownY;
                         long dt = System.currentTimeMillis() - touchDownTime;
                         if (Math.abs(dx) < 30 && Math.abs(dy) < 30 && dt < 300) {
-                            android.graphics.Point pt = new android.graphics.Point((int) event.getX(), (int) event.getY());
+                            int[] loc = new int[2];
+                            mapView.getLocationOnScreen(loc);
+                            android.graphics.Point pt = new android.graphics.Point(
+                                    (int) event.getRawX() - loc[0],
+                                    (int) event.getRawY() - loc[1]);
                             onMapClick(aMap.getProjection().fromScreenLocation(pt));
                         }
                         break;
@@ -270,8 +280,8 @@ public class MapPickerActivity extends AppCompatActivity {
     private void selectLocation(double lat, double lng) {
         selectedLatLng = new LatLng(lat, lng);
         aMap.animateCamera(CameraUpdateFactory.newLatLngZoom(selectedLatLng, 17));
-        tvLat.setText(String.format("%.6f", lat));
-        tvLng.setText(String.format("%.6f", lng));
+        tvLat.setText(String.valueOf(lat));
+        tvLng.setText(String.valueOf(lng));
         tvHint.setVisibility(View.GONE);
     }
 
@@ -330,9 +340,14 @@ public class MapPickerActivity extends AppCompatActivity {
     }
 
     private void onMapClick(LatLng latLng) {
+        long now = System.currentTimeMillis();
+        if (now - lastClickTime < 200) return;
+        lastClickTime = now;
         selectedLatLng = latLng;
-        tvLat.setText(String.format("%.6f", latLng.latitude));
-        tvLng.setText(String.format("%.6f", latLng.longitude));
+        aMap.clear();
+        aMap.addMarker(new MarkerOptions().position(latLng));
+        tvLat.setText(String.valueOf(latLng.latitude));
+        tvLng.setText(String.valueOf(latLng.longitude));
         tvHint.setVisibility(View.GONE);
     }
 

@@ -1,47 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Frosted Glass Modern Palette -->
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
-    <color name="black">#FF000000</color>
+    <!-- iOS Glass Palette -->
+    <color name="ios_bg">#FFF2F2F7</color>
+    <color name="ios_card">#CCFFFFFF</color>
+    <color name="ios_card_stroke">#1A000000</color>
+    <color name="ios_text_primary">#FF000000</color>
+    <color name="ios_text_secondary">#FF6D6D72</color>
+    <color name="ios_text_hint">#FFC7C7CC</color>
+    <color name="ios_tint">#FF007AFF</color>
+    <color name="ios_tint_dark">#FF0062CC</color>
+    <color name="ios_separator">#FFE5E5EA</color>
+    <color name="ios_destructive">#FFFF3B30</color>
+    <color name="ios_switch_on">#FF34C759</color>
+    <color name="ios_switch_off">#FFE9E9EA</color>
+    <color name="ios_switch_thumb">#FFFFFFFF</color>
+    <color name="ios_glass_overlay">#CCF2F2F7</color>
+
+    <!-- Aliases for existing code compatibility -->
     <color name="white">#FFFFFFFF</color>
-    <color name="gray">#FF9E9E9E</color>
-    <color name="light_gray">#FFE0E0E0</color>
+    <color name="black">#FF000000</color>
+    <color name="gray">#FF8E8E93</color>
+    <color name="light_gray">#FFD1D1D6</color>
 
-    <color name="fg_primary">#FF6C5CE7</color>
-    <color name="fg_primary_dark">#FF5A4BD1</color>
-    <color name="fg_accent">#FFA29BFE</color>
-    <color name="fg_background">#FFF2F1F9</color>
-    <color name="fg_card">#F4FFFFFF</color>
-    <color name="fg_card_row">#FFF8F7FC</color>
-    <color name="fg_card_stroke">#20FFFFFF</color>
-    <color name="fg_text_primary">#FF2D2640</color>
-    <color name="fg_text_secondary">#FF7C7590</color>
-    <color name="fg_text_hint">#FFB0A8C0</color>
-    <color name="fg_divider">#FFE8E5F0</color>
-    <color name="fg_switch_on">#FF6C5CE7</color>
-    <color name="fg_switch_off">#FFD5D0E3</color>
-    <color name="fg_switch_thumb_off">#FFE8E8E8</color>
-    <color name="fg_switch_track_alpha">#CC6C5CE7</color>
-    <color name="fg_gradient_start">#FF6C5CE7</color>
-    <color name="fg_gradient_end">#FFA29BFE</color>
-
-    <color name="mi_primary">@color/fg_primary</color>
-    <color name="mi_primary_dark">@color/fg_primary_dark</color>
-    <color name="mi_accent">@color/fg_accent</color>
-    <color name="mi_background">@color/fg_background</color>
-    <color name="mi_card">@color/fg_card</color>
-    <color name="mi_card_hover">@color/fg_divider</color>
-    <color name="mi_card_row">@color/fg_card_row</color>
-    <color name="mi_text_primary">@color/fg_text_primary</color>
-    <color name="mi_text_secondary">@color/fg_text_secondary</color>
-    <color name="mi_text_hint">@color/fg_text_hint</color>
-    <color name="mi_divider">@color/fg_divider</color>
-    <color name="mi_switch_on">@color/fg_switch_on</color>
-    <color name="mi_switch_off">@color/fg_switch_off</color>
-    <color name="mi_switch_thumb_off">@color/fg_switch_thumb_off</color>
-    <color name="mi_switch_track_alpha">@color/fg_switch_track_alpha</color>
+    <color name="mi_background">@color/ios_bg</color>
+    <color name="mi_card">@color/ios_card</color>
+    <color name="mi_card_row">#99FFFFFF</color>
+    <color name="mi_card_hover">#1A000000</color>
+    <color name="mi_text_primary">@color/ios_text_primary</color>
+    <color name="mi_text_secondary">@color/ios_text_secondary</color>
+    <color name="mi_text_hint">@color/ios_text_hint</color>
+    <color name="mi_divider">@color/ios_separator</color>
+    <color name="mi_switch_on">@color/ios_switch_on</color>
+    <color name="mi_switch_off">@color/ios_switch_off</color>
+    <color name="mi_switch_thumb_off">@color/ios_switch_thumb</color>
+    <color name="mi_switch_track_alpha">#4C34C759</color>
+    <color name="mi_primary">@color/ios_tint</color>
+    <color name="mi_primary_dark">@color/ios_tint_dark</color>
+    <color name="mi_accent">@color/ios_tint</color>
 </resources>

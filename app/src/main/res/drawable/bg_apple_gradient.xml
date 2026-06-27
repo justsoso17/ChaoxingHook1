@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Apple-style flowing gradient background -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape>
+            <gradient
+                android:startColor="#FFE8D5F5"
+                android:endColor="#FFF5E6D3"
+                android:angle="315"
+                android:type="linear" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <gradient
+                android:startColor="#00C9E8FF"
+                android:centerColor="#6688A3F0"
+                android:endColor="#00FFB5D0"
+                android:centerX="0.85"
+                android:centerY="0.15"
+                android:type="radial"
+                android:gradientRadius="500dp" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <gradient
+                android:startColor="#00FFD4B8"
+                android:centerColor="#44FF9EBD"
+                android:endColor="#00D5B8FF"
+                android:centerX="0.1"
+                android:centerY="0.8"
+                android:type="radial"
+                android:gradientRadius="400dp" />
+        </shape>
+    </item>
+</layer-list>
