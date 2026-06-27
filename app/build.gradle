@@ -2,6 +2,13 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+// Load Amap keys from local.properties (gitignored)
+def localProps = new Properties()
+def localFile = rootProject.file('local.properties')
+if (localFile.exists()) {
+    localProps.load(localFile.newDataInputStream())
+}
+
 android {
     namespace 'com.fredoseep.chaoxinghook'
     compileSdk {
@@ -16,6 +23,13 @@ android {
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // Inject keys into AndroidManifest and BuildConfig
+        manifestPlaceholders = [
+                AMAP_MAP_KEY: localProps.getProperty('AMAP_MAP_KEY', 'MISSING_KEY')
+        ]
+        buildConfigField 'String', 'AMAP_WEB_KEY',
+                "\"${localProps.getProperty('AMAP_WEB_KEY', 'MISSING_KEY')}\""
     }
 
     buildTypes {
@@ -28,12 +42,16 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+    buildFeatures {
+        buildConfig true
+    }
 }
 
 dependencies {
     implementation libs.appcompat
     implementation libs.material
     compileOnly 'de.robv.android.xposed:api:82'
+    implementation 'com.amap.api:3dmap:10.0.600'
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core

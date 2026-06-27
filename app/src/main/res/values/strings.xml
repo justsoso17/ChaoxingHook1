@@ -47,4 +47,9 @@
     <string name="hint_name">例如: 张三</string>
     
     <string name="tip">修改配置后需要重启超星学习通才能生效</string>
+
+    <string name="pick_from_map">从地图选取</string>
+    <string name="map_search_hint">搜索地点</string>
+    <string name="map_confirm">确认选取</string>
+    <string name="map_click_hint">点击地图选取坐标</string>
 </resources>
