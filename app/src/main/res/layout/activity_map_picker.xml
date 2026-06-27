@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <FrameLayout
+        android:id="@+id/map_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Top search area -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="24dp"
+        android:paddingLeft="8dp"
+        android:paddingRight="8dp"
+        android:background="#F8FFFFFF">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <LinearLayout
+                android:id="@+id/btn_back"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="@drawable/mi_button_secondary">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="←"
+                    android:textSize="20sp"
+                    android:textColor="@color/mi_text_primary" />
+            </LinearLayout>
+
+            <EditText
+                android:id="@+id/et_search"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:layout_marginLeft="8dp"
+                android:hint="@string/map_search_hint"
+                android:textSize="14sp"
+                android:paddingLeft="12dp"
+                android:paddingRight="12dp"
+                android:singleLine="true"
+                android:imeOptions="actionSearch"
+                android:textColor="@color/mi_text_primary"
+                android:textColorHint="@color/mi_text_hint"
+                android:background="@drawable/mi_setting_row" />
+
+            <LinearLayout
+                android:id="@+id/btn_search"
+                android:layout_width="48dp"
+                android:layout_height="40dp"
+                android:layout_marginLeft="8dp"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="@drawable/mi_button_primary">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🔍"
+                    android:textSize="18sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Suggestions dropdown -->
+        <LinearLayout
+            android:id="@+id/layout_suggestions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:background="@drawable/mi_card_elevation"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="4dp"
+            android:clickable="false"
+            android:focusable="false" />
+    </LinearLayout>
+
+    <!-- Bottom coordinate panel -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:background="@drawable/mi_card_elevation"
+        android:layout_margin="12dp">
+
+        <TextView
+            android:id="@+id/tv_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/map_click_hint"
+            android:textSize="13sp"
+            android:textColor="@color/mi_text_hint"
+            android:gravity="center"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="经度: "
+                android:textSize="14sp"
+                android:textColor="@color/mi_text_secondary" />
+
+            <TextView
+                android:id="@+id/tv_lng"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="-"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="@color/mi_text_primary" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="    纬度: "
+                android:textSize="14sp"
+                android:textColor="@color/mi_text_secondary"
+                android:layout_marginLeft="16dp" />
+
+            <TextView
+                android:id="@+id/tv_lat"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="-"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="@color/mi_text_primary" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/btn_confirm"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:background="@drawable/mi_button_primary"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/map_confirm"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/white" />
+        </LinearLayout>
+    </LinearLayout>
+
+</FrameLayout>

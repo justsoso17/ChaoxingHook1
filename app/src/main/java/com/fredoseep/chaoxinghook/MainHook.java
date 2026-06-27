@@ -56,7 +56,7 @@ public class MainHook implements IXposedHookLoadPackage {
         public static final String METHOD_ADAPTER_GET_ITEM_COUNT = "getItemCount";
         public static final String FIELD_ADAPTER_LIST_A = "a";
         public static final String FIELD_ADAPTER_LIST_F82688A = "f82688a";
-        public static final String CLASS_DB_QUERY = "lo.b0";
+        public static final String CLASS_DB_QUERY = "zo.b0";
         public static final String METHOD_DB_QUERY_W = "W";
         public static final String CLASS_CHAT_MANAGER_Q1 = "com.chaoxing.mobile.chat.manager.q1";
         public static final String METHOD_CHAT_MANAGER_C1 = "c1";
