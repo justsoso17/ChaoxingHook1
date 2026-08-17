@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 // Load Amap keys from local.properties (gitignored)
@@ -12,13 +13,13 @@ if (localFile.exists()) {
 android {
     namespace 'com.fredoseep.chaoxinghook'
     compileSdk {
-        version = release(36)
+        version = release(37)
     }
 
     defaultConfig {
         applicationId "com.fredoseep.chaoxinghook"
         minSdk 24
-        targetSdk 36
+        targetSdk 37
         versionCode 1
         versionName "1.0"
 
@@ -44,6 +45,7 @@ android {
     }
     buildFeatures {
         buildConfig true
+        compose true
     }
 }
 
@@ -52,6 +54,12 @@ dependencies {
     implementation libs.material
     compileOnly 'de.robv.android.xposed:api:82'
     implementation 'com.amap.api:3dmap:10.0.600'
+    // DexKit：运行时反混淆定位 hook 点（加固场景需 ClassLoader 方式创建）
+    implementation libs.dexkit
+    // Compose + MIUIX（HyperOS 风格组件库，设置页 UI）
+    implementation libs.activity.compose
+    implementation libs.miuix.ui
+    implementation libs.miuix.preference
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core

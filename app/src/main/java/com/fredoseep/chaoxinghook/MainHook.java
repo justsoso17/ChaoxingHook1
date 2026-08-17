@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -25,13 +26,90 @@ import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam;
 
+import org.luckypray.dexkit.DexKitBridge;
+import org.luckypray.dexkit.query.FindClass;
+import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.matchers.MethodMatcher;
+import org.luckypray.dexkit.query.matchers.MethodsMatcher;
+import org.luckypray.dexkit.result.ClassData;
+import org.luckypray.dexkit.result.ClassDataList;
+
 public class MainHook implements IXposedHookLoadPackage {
+
+    static { System.loadLibrary("dexkit"); }
 
     private static final Set<String> hookedWebViewClients = new HashSet<>();
     private static final String FAKE_UPLOAD_FILE_PATH = "/storage/emulated/0/Download/fake_exam_image.png";
 
     // 核心修复：添加防重入标志，防止读取配置文件时触发无限递归死循环
     private static final ThreadLocal<Boolean> READING_CONFIG = ThreadLocal.withInitial(() -> false);
+
+    // ==================== DexKit 反混淆定位辅助 ====================
+    // 学习通使用 R8/梆梆加固混淆，类名/方法名在版本更新后可能变化。
+    // 策略：优先用 DexKit 按"类名(可空)+方法签名"结构匹配（不依赖方法名），
+    // 找不到再回退到旧的硬编码类名，最大化 hook 在版本更新后的存活率。
+
+    /** 按 类名(可空)+方法签名 查找类；返回 null 表示未找到（调用方自行回退） */
+    private static Class<?> findClassByMethods(DexKitBridge bridge, ClassLoader loader,
+            String tag, String className, String returnType, String... paramTypes) {
+        try {
+            MethodMatcher mm = MethodMatcher.create();
+            if (returnType != null) mm = mm.returnType(returnType);
+            if (paramTypes.length > 0) mm = mm.paramTypes(paramTypes);
+            ClassMatcher cm = ClassMatcher.create()
+                    .methods(MethodsMatcher.create().methods(List.of(mm)));
+            if (className != null) cm = cm.className(className);
+            FindClass fc = FindClass.create().searchPackages("com.chaoxing.mobile").matcher(cm);
+            ClassDataList list = bridge.findClass(fc);
+            ClassData cd = list.singleOrThrow(() -> new IllegalStateException(tag + " multiple matches"));
+            Class<?> clazz = cd.getInstance(loader);
+            XposedBridge.log("Chaoxing DexKit[" + tag + "]: " + clazz.getName());
+            return clazz;
+        } catch (Throwable t) {
+            // 找不到或非唯一，走回退链
+        }
+        if (className != null) {
+            try {
+                Class<?> clazz = XposedHelpers.findClassIfExists(className, loader);
+                if (clazz != null) {
+                    XposedBridge.log("Chaoxing DexKit[" + tag + "]: fallback class " + clazz.getName());
+                    return clazz;
+                }
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    /** 反射：按 返回类型(可空)+参数类型 找方法（参数类型用原始类型名，混淆不影响） */
+    private static Method findMethodBySignature(Class<?> clazz, String returnType, String... paramTypes) {
+        if (clazz == null) return null;
+        try {
+            for (Method m : clazz.getDeclaredMethods()) {
+                if (m.isBridge() || m.isSynthetic()) continue;
+                Class<?>[] pts = m.getParameterTypes();
+                if (pts.length != paramTypes.length) continue;
+                boolean ok = true;
+                for (int i = 0; i < pts.length; i++) {
+                    if (!pts[i].getName().equals(paramTypes[i])) { ok = false; break; }
+                }
+                if (!ok) continue;
+                if (returnType != null && !m.getReturnType().getName().equals(returnType)) continue;
+                return m;
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    /** 安全 hook：try-catch 包裹，失败静默并记日志 */
+    private static void hookMethodSafe(Method method, XC_MethodHook callback, String tag) {
+        if (method == null) return;
+        try {
+            XposedBridge.hookMethod(method, callback);
+            XposedBridge.log("Chaoxing DexKit[" + tag + "]: hooked " + method.toGenericString());
+        } catch (Throwable t) {
+            XposedBridge.log("Chaoxing DexKit[" + tag + "]: hook failed " + t);
+        }
+    }
 
     static class LocationPoint {
         double lat;
@@ -45,6 +123,7 @@ public class MainHook implements IXposedHookLoadPackage {
     private static double[] calculatedTarget = null;
 
     public static class ObfuscationMap {
+        // 以下均为"当前版本已知名"，仅作 DexKit 结构匹配失败时的回退；方法名不做依赖
         public static final String CLASS_SPLASH_VIEW_MODEL = "com.chaoxing.mobile.activity.SplashViewModel";
         public static final String METHOD_SPLASH_A = "a";
         public static final String CLASS_HOME_PAGE_HEADER = "com.chaoxing.mobile.study.home.mainpage.view.HomePageHeader";
@@ -62,6 +141,11 @@ public class MainHook implements IXposedHookLoadPackage {
         public static final String METHOD_CHAT_MANAGER_C1 = "c1";
         public static final String CLASS_EM_CMD_MESSAGE_BODY = "com.hyphenate.chat.EMCmdMessageBody";
         public static final String METHOD_EM_CMD_ACTION = "action";
+        public static final String CLASS_PLAYER_FRAGMENT = "com.chaoxing.mobile.player.course.CoursePlayerFragment";
+        public static final String METHOD_PLAYER_PA = "Pa";
+        public static final String METHOD_PLAYER_WA = "Wa";
+        public static final String CLASS_DOT_RES = "com.chaoxing.mobile.player.course.model.CourseDotRes";
+        public static final String METHOD_DOT_RES_ROLLBACK = "isRollbackStatus";
     }
 
     private static class SignConfig {
@@ -87,66 +171,223 @@ public class MainHook implements IXposedHookLoadPackage {
     public void handleLoadPackage(LoadPackageParam lpparam) throws Throwable {
         if (!lpparam.packageName.equals("com.chaoxing.mobile")) return;
 
-        try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_SPLASH_VIEW_MODEL, lpparam.classLoader), ObfuscationMap.METHOD_SPLASH_A, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { param.setResult(null); } }); } catch (Throwable t) {}
-        try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_HOME_PAGE_HEADER, lpparam.classLoader), ObfuscationMap.METHOD_HOME_HEADER_G, new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam param) { if (param.args.length > 0) param.args[0] = null; } }); } catch (Throwable t) {}
-        try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_CATEGORY_HOLDER, lpparam.classLoader), ObfuscationMap.METHOD_CATEGORY_HOLDER_O, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object viewHolder = param.thisObject; android.widget.TextView tvLeft = (android.widget.TextView) XposedHelpers.getObjectField(viewHolder, ObfuscationMap.FIELD_CATEGORY_HOLDER_TV_LEFT); if (tvLeft != null && tvLeft.getText() != null) { String title = tvLeft.getText().toString(); if (title.contains("推荐") || title.contains("Recommend")) { android.view.View itemView = (android.view.View) XposedHelpers.getObjectField(viewHolder, "itemView"); if (itemView != null) { itemView.setVisibility(android.view.View.GONE); android.view.ViewGroup.LayoutParams layoutParams = itemView.getLayoutParams(); layoutParams.height = 0; layoutParams.width = 0; itemView.setLayoutParams(layoutParams); } } } } }); } catch (Throwable t) {}
-        try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_MAIN_PAGE_RECORD_ADAPTER, lpparam.classLoader), ObfuscationMap.METHOD_ADAPTER_GET_ITEM_COUNT, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { try { java.util.List<?> listA = (java.util.List<?>) XposedHelpers.getObjectField(param.thisObject, ObfuscationMap.FIELD_ADAPTER_LIST_A); if (listA != null) param.setResult(listA.size()); } catch (NoSuchFieldError e) { java.util.List<?> listA = (java.util.List<?>) XposedHelpers.getObjectField(param.thisObject, ObfuscationMap.FIELD_ADAPTER_LIST_F82688A); if (listA != null) param.setResult(listA.size()); } } }); } catch (Throwable t) {}
-        try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_DB_QUERY, lpparam.classLoader), ObfuscationMap.METHOD_DB_QUERY_W, new XC_MethodHook() { @Override protected void beforeHookedMethod(MethodHookParam param) { if (param.args.length == 3 && param.args[2] instanceof Integer) { if ((Integer) param.args[2] == 3) param.args[2] = 15; } } }); } catch (Throwable t) {}
-        try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_CHAT_MANAGER_Q1, lpparam.classLoader), ObfuscationMap.METHOD_CHAT_MANAGER_C1, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result instanceof java.util.List) { java.util.List<?> list = (java.util.List<?>) result; for (int i = list.size() - 1; i >= 0; i--) { Object info = list.get(i); if (info != null && info.getClass().getSimpleName().equals("ConversationInfo")) { if ((Integer) XposedHelpers.callMethod(info, "getType") == 20) { list.remove(i); } } } } } }); } catch (Throwable t) {}
-        try { XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_EM_CMD_MESSAGE_BODY, lpparam.classLoader), ObfuscationMap.METHOD_EM_CMD_ACTION, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result != null && "REVOKE_FLAG".equals(result.toString())) { param.setResult("BLOCK_REVOKE_FLAG"); } } }); } catch (Throwable t) {}
+        // DexKit：加固场景（梆梆 SecNeo）必须用 ClassLoader 方式创建，useMemoryDexFile=true
+        try (DexKitBridge bridge = DexKitBridge.create(lpparam.classLoader, true)) {
+            installCoreHooks(bridge, lpparam);
+        }
+        installWebViewHooks(lpparam);
+        installFileReplaceHook(lpparam);
+        installExamSnapshotHook(lpparam);
+    }
 
+    /** 核心 hook 区：全部走 DexKit 结构匹配 + 硬编码名回退 */
+    private void installCoreHooks(DexKitBridge bridge, LoadPackageParam lpparam) {
+        ClassLoader loader = lpparam.classLoader;
 
-// ==========================================
-        // 【第一道防线】：精准阉割原生播放器的异常行为上报
-        // ==========================================
-        try {
-            Class<?> fragmentClass = XposedHelpers.findClassIfExists("com.chaoxing.mobile.player.course.CoursePlayerFragment", lpparam.classLoader);
-            if (fragmentClass != null) {
-
-                // 1. 物理斩杀“拖拽汇报” (Pa)
-                XposedHelpers.findAndHookMethod(fragmentClass, "Pa", int.class, new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        param.setResult(null); // 强制返回，阻断拖拽记录发往服务器
-                        XposedBridge.log("Chaoxing [物理超度]: 成功拦截 拖拽行为 上报 (Pa)");
-                    }
-                });
-
-                // 2. 物理斩杀“暂停汇报” (Wa)
-                XposedHelpers.findAndHookMethod(fragmentClass, "Wa", new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        param.setResult(null); // 强制返回
-                        XposedBridge.log("Chaoxing [物理超度]: 成功拦截 暂停/切后台行为 上报 (Wa)");
-                    }
-                });
-
-                // 注意：彻底移除了之前错误拦截 Ra (导致无法提交完成) 的代码！
-            }
-        } catch (Throwable t) {
-            XposedBridge.log("Chaoxing Error (Fragment Hook): " + t.getMessage());
+        // 1. SplashViewModel.a(Activity) -> Ad：拦截开屏广告数据（返回 null 使广告不展示）
+        {
+            Class<?> clazz = findClassByMethods(bridge, loader, "splash",
+                    ObfuscationMap.CLASS_SPLASH_VIEW_MODEL, null, "android.app.Activity");
+            Method m = findMethodBySignature(clazz, null, "android.app.Activity");
+            hookMethodSafe(m, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) { param.setResult(null); }
+            }, "splash.a");
         }
 
-        // ==========================================
-        // 【第二道防线】：绝对防御，无视服务器的进度回退指令
-        // ==========================================
-        try {
-            Class<?> dotResClass = XposedHelpers.findClassIfExists("com.chaoxing.mobile.player.course.model.CourseDotRes", lpparam.classLoader);
-            if (dotResClass != null) {
-                XposedHelpers.findAndHookMethod(dotResClass, "isRollbackStatus", new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                        // 如果服务器发现了进度跳跃要求回退，到了手机内存里统统变成 false (不回退)！
-                        if ((Boolean) param.getResult()) {
-                            param.setResult(false);
-                            XposedBridge.log("Chaoxing [防回退]: 成功没收服务器的进度回退指令！");
+        // 2. HomePageHeader.g(List) -> V：清空首页头部广告数据
+        {
+            Class<?> clazz = findClassByMethods(bridge, loader, "home-header",
+                    ObfuscationMap.CLASS_HOME_PAGE_HEADER, "void", "java.util.List");
+            Method m = findMethodBySignature(clazz, "void", "java.util.List");
+            hookMethodSafe(m, new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    if (param.args.length > 0) param.args[0] = null;
+                }
+            }, "home-header.g");
+        }
+
+        // 3. MainRecordCategoryHolder.o(ResourceLog) -> V：隐藏"推荐"分类卡片
+        {
+            Class<?> clazz = findClassByMethods(bridge, loader, "category-holder",
+                    ObfuscationMap.CLASS_CATEGORY_HOLDER, "void", "com.chaoxing.mobile.resource.ui.ResourceLog");
+            Method m = findMethodBySignature(clazz, "void", "com.chaoxing.mobile.resource.ui.ResourceLog");
+            hookMethodSafe(m, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    try {
+                        Object viewHolder = param.thisObject;
+                        android.widget.TextView tvLeft = findTextViewField(viewHolder, ObfuscationMap.FIELD_CATEGORY_HOLDER_TV_LEFT);
+                        if (tvLeft != null && tvLeft.getText() != null) {
+                            String title = tvLeft.getText().toString();
+                            if (title.contains("推荐") || title.contains("Recommend")) {
+                                android.view.View itemView = (android.view.View) XposedHelpers.getObjectField(viewHolder, "itemView");
+                                if (itemView != null) {
+                                    itemView.setVisibility(android.view.View.GONE);
+                                    android.view.ViewGroup.LayoutParams layoutParams = itemView.getLayoutParams();
+                                    layoutParams.height = 0;
+                                    layoutParams.width = 0;
+                                    itemView.setLayoutParams(layoutParams);
+                                }
+                            }
+                        }
+                    } catch (Throwable ignored) {}
+                }
+            }, "category-holder.o");
+        }
+
+        // 4. MainPageRecordAdapter.getItemCount()：主页记录列表只显示真正的记录（去掉推荐位）
+        {
+            Class<?> clazz = findClassByMethods(bridge, loader, "record-adapter",
+                    ObfuscationMap.CLASS_MAIN_PAGE_RECORD_ADAPTER, "int", (String[]) new String[0]);
+            Method m = findMethodBySignature(clazz, "int", new String[0]);
+            hookMethodSafe(m, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    try {
+                        java.util.List<?> listA = findListField(param.thisObject, new String[]{
+                                ObfuscationMap.FIELD_ADAPTER_LIST_A, ObfuscationMap.FIELD_ADAPTER_LIST_F82688A});
+                        if (listA != null) param.setResult(listA.size());
+                    } catch (Throwable ignored) {}
+                }
+            }, "record-adapter.getItemCount");
+        }
+
+        // 5. zo.b0.W(Context, int, int) -> LiveData：数据库查询分页大小 3 -> 15
+        {
+            Class<?> clazz = findClassByMethods(bridge, loader, "db-query",
+                    null, "androidx.lifecycle.LiveData", "android.content.Context", "int", "int");
+            if (clazz == null) {
+                // 类名也变化时回退旧名
+                clazz = findClassByMethods(bridge, loader, "db-query",
+                        ObfuscationMap.CLASS_DB_QUERY, "androidx.lifecycle.LiveData", "android.content.Context", "int", "int");
+            }
+            Method m = findMethodBySignature(clazz, "androidx.lifecycle.LiveData",
+                    "android.content.Context", "int", "int");
+            hookMethodSafe(m, new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    if (param.args.length == 3 && param.args[2] instanceof Integer) {
+                        if ((Integer) param.args[2] == 3) param.args[2] = 15;
+                    }
+                }
+            }, "db-query.W");
+        }
+
+        // 6. q1.c1()：聊天列表过滤（新版 q1 已是 Runnable，此 hook 可能失效——失败静默）
+        {
+            Class<?> clazz = findClassByMethods(bridge, loader, "chat-q1",
+                    ObfuscationMap.CLASS_CHAT_MANAGER_Q1, "java.util.List", (String[]) new String[0]);
+            if (clazz == null) {
+                try { clazz = XposedHelpers.findClassIfExists(ObfuscationMap.CLASS_CHAT_MANAGER_Q1, loader); } catch (Throwable ignored) {}
+            }
+            Method m = findMethodBySignature(clazz, "java.util.List", new String[0]);
+            hookMethodSafe(m, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    Object result = param.getResult();
+                    if (result instanceof java.util.List) {
+                        java.util.List<?> list = (java.util.List<?>) result;
+                        for (int i = list.size() - 1; i >= 0; i--) {
+                            Object info = list.get(i);
+                            if (info != null && info.getClass().getSimpleName().equals("ConversationInfo")) {
+                                if ((Integer) XposedHelpers.callMethod(info, "getType") == 20) {
+                                    list.remove(i);
+                                }
+                            }
                         }
                     }
-                });
-            }
-        } catch (Throwable t) {
-            XposedBridge.log("Chaoxing Error (Rollback Hook): " + t.getMessage());
+                }
+            }, "chat-q1.c1");
         }
+
+        // 7. EMCmdMessageBody.action()：环信 SDK 库类（第三方库不混淆，保持硬编码）
+        try {
+            XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_EM_CMD_MESSAGE_BODY, loader), ObfuscationMap.METHOD_EM_CMD_ACTION, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result != null && "REVOKE_FLAG".equals(result.toString())) { param.setResult("BLOCK_REVOKE_FLAG"); } } });
+        } catch (Throwable t) {}
+
+        // 8. CoursePlayerFragment.Pa()/Wa()：原生播放器行为上报拦截（防刷课）
+        //    注意：Pa/Wa 在 6.7.8 为无参方法（旧代码 Pa(int) 签名错误已修正）
+        {
+            Class<?> frag = findClassByMethods(bridge, loader, "player-frag",
+                    ObfuscationMap.CLASS_PLAYER_FRAGMENT, null, (String[]) new String[0]);
+            if (frag == null) {
+                try { frag = XposedHelpers.findClassIfExists(ObfuscationMap.CLASS_PLAYER_FRAGMENT, loader); } catch (Throwable ignored) {}
+            }
+            if (frag != null) {
+                try {
+                    XposedBridge.hookAllMethods(frag, ObfuscationMap.METHOD_PLAYER_PA, new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            param.setResult(null);
+                            XposedBridge.log("Chaoxing [物理超度]: 成功拦截 拖拽行为 上报 (Pa)");
+                        }
+                    });
+                } catch (Throwable t) { XposedBridge.log("Chaoxing Error (Pa hook): " + t.getMessage()); }
+                try {
+                    XposedBridge.hookAllMethods(frag, ObfuscationMap.METHOD_PLAYER_WA, new XC_MethodHook() {
+                        @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            param.setResult(null);
+                            XposedBridge.log("Chaoxing [物理超度]: 成功拦截 暂停/切后台行为 上报 (Wa)");
+                        }
+                    });
+                } catch (Throwable t) { XposedBridge.log("Chaoxing Error (Wa hook): " + t.getMessage()); }
+                XposedBridge.log("Chaoxing: 播放器上报拦截已安装 " + frag.getName());
+            }
+        }
+
+        // 9. CourseDotRes.isRollbackStatus()：无视服务端进度回退指令
+        {
+            Class<?> clazz = findClassByMethods(bridge, loader, "dot-res",
+                    ObfuscationMap.CLASS_DOT_RES, "boolean", (String[]) new String[0]);
+            if (clazz == null) {
+                try { clazz = XposedHelpers.findClassIfExists(ObfuscationMap.CLASS_DOT_RES, loader); } catch (Throwable ignored) {}
+            }
+            Method m = findMethodBySignature(clazz, "boolean", new String[0]);
+            hookMethodSafe(m, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    if (Boolean.TRUE.equals(param.getResult())) {
+                        param.setResult(false);
+                        XposedBridge.log("Chaoxing [防回退]: 成功没收服务器的进度回退指令！");
+                    }
+                }
+            }, "dot-res.isRollbackStatus");
+        }
+    }
+
+    /** 从 ViewHolder 中找 TextView 字段：优先指定名，字段名混淆后改找任意 TextView 类型字段 */
+    private static android.widget.TextView findTextViewField(Object obj, String preferredName) {
+        try { return (android.widget.TextView) XposedHelpers.getObjectField(obj, preferredName); }
+        catch (Throwable t) {
+            try {
+                for (java.lang.reflect.Field f : obj.getClass().getDeclaredFields()) {
+                    if (f.getType() == android.widget.TextView.class) {
+                        f.setAccessible(true);
+                        return (android.widget.TextView) f.get(obj);
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    /** 从 RecyclerView.Adapter 中找 List 字段：依次尝试指定名，再找任意 List 类型字段 */
+    private static java.util.List<?> findListField(Object obj, String[] preferredNames) {
+        for (String name : preferredNames) {
+            try {
+                Object v = XposedHelpers.getObjectField(obj, name);
+                if (v instanceof java.util.List) return (java.util.List<?>) v;
+            } catch (Throwable ignored) {}
+        }
+        try {
+            for (java.lang.reflect.Field f : obj.getClass().getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) {
+                    f.setAccessible(true);
+                    Object v = f.get(obj);
+                    if (v instanceof java.util.List) return (java.util.List<?>) v;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+
+    /** WebView 层 hook：图片长按下载、H5 上报参数篡改、防切屏、复制限制解除、定位签到、网课解锁等 */
+    private void installWebViewHooks(LoadPackageParam lpparam) {
         try {
             Class<?> webViewClass = XposedHelpers.findClass("android.webkit.WebView", lpparam.classLoader);
             XposedBridge.hookAllMethods(webViewClass, "setWebViewClient", new XC_MethodHook() {
@@ -609,6 +850,23 @@ public class MainHook implements IXposedHookLoadPackage {
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                     if (param.args.length > 0 && param.args[0] instanceof String) {
                         String jsCode = (String) param.args[0];
+
+                        // ===== 考试防切屏绕过（知识库验证方案，锚定协议字符串层，抗混淆）=====
+                        // 学习通切屏时原生注入 CLIENT_WEB_LIFECYCLE {status:10/0}(切出)，
+                        // H5 考试页收到后弹警告+上报；把 status 全部伪装成 11(前台) 即可无感通过。
+                        // 实测 3 次切屏全部拦截、警告弹窗消失（见 CHAOXING_REVERSE_NOTES.md 第 5 节）
+                        if (jsCode.contains("CLIENT_WEB_LIFECYCLE")) {
+                            // 正则需与 cxanalysis 验证版完全一致：\\\\? = 可选反斜杠（兼容 JSON 转义），
+                            // 漏一层转义会变成"字面问号"导致永远匹配不上
+                            String replaced = jsCode.replaceAll("\\\\?\"status\\\\?\"\\s*:\\s*\\d+", "\"status\":11")
+                                    .replaceAll("'status'\\s*:\\s*\\d+", "'status':11");
+                            if (!replaced.equals(jsCode)) {
+                                jsCode = replaced;
+                                param.args[0] = jsCode;
+                                XposedBridge.log("Chaoxing [防切屏]: CLIENT_WEB_LIFECYCLE status 已伪装为前台(11)");
+                            }
+                        }
+
                         if (jsCode.contains("CLIENT_DEVICE_FLAG")) {
                             SignConfig config = getSignConfig();
                             if (config.randomizeDeviceFlag) {
@@ -630,7 +888,10 @@ public class MainHook implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             XposedBridge.log("Chaoxing AdSkip Error (WebView Hook): " + t.getMessage());
         }
+    }
 
+    /** 文件层 hook：考试监考截图替换（路径特征，抗混淆） */
+    private void installFileReplaceHook(LoadPackageParam lpparam) {
         try {
             XC_MethodHook fileReadHook = new XC_MethodHook() {
                 @Override
@@ -674,7 +935,13 @@ public class MainHook implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             XposedBridge.log("Chaoxing Error (File Replace Hook): " + t.getMessage());
         }
+    }
 
+    /**
+     * 考试截图上传拦截：网络/协议层为主（抓包定位的 pan-yz 上传 URL，抗混淆），
+     * f1.q0 类名 hook 已失效（6.7.8 中 f1 仅剩 execute），保留为静默回退不再依赖。
+     */
+    private void installExamSnapshotHook(LoadPackageParam lpparam) {
         try {
             XposedHelpers.findAndHookMethod(
                     "com.chaoxing.mobile.webapp.jsprotocal.common.f1",
@@ -693,7 +960,7 @@ public class MainHook implements IXposedHookLoadPackage {
                     }
             );
         } catch (Throwable t) {
-            XposedBridge.log("Chaoxing Error (f1.q0 Hook): " + t.getMessage());
+            // 6.7.8 起 f1.q0 已不存在：上传拦截由 URL 层（pan-yz.chaoxing.com/upload）承担
         }
     }
 

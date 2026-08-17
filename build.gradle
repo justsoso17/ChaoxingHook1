@@ -1,4 +1,8 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 plugins {
     alias(libs.plugins.android.application) apply false
+    // 显式将 KGP 2.4.x 放入构建 classpath，覆盖 AGP 9 内置 Kotlin(2.2)，
+    // 以消费由 Kotlin 2.4 编译的 MIUIX 0.9.4-rc01
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.compose) apply false
 }
