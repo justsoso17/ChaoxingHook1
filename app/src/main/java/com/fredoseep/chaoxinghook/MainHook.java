@@ -36,7 +36,16 @@ import org.luckypray.dexkit.result.ClassDataList;
 
 public class MainHook implements IXposedHookLoadPackage {
 
-    static { System.loadLibrary("dexkit"); }
+    // 诊断日志（写学习通私有目录，logcat 不可靠时用）：/data/user/0/com.chaoxing.mobile/files/chaoxinghook_debug.log
+    private static final String DEBUG_LOG_FILE = "/data/user/0/com.chaoxing.mobile/files/chaoxinghook_debug.log";
+
+    private static void debugLog(String msg) {
+        try {
+            java.io.FileWriter fw = new java.io.FileWriter(DEBUG_LOG_FILE, true);
+            fw.write(msg + "\n");
+            fw.close();
+        } catch (Throwable ignored) {}
+    }
 
     private static final Set<String> hookedWebViewClients = new HashSet<>();
     private static final String FAKE_UPLOAD_FILE_PATH = "/storage/emulated/0/Download/fake_exam_image.png";
@@ -80,9 +89,16 @@ public class MainHook implements IXposedHookLoadPackage {
         return null;
     }
 
-    /** 反射：按 返回类型(可空)+参数类型 找方法（参数类型用原始类型名，混淆不影响） */
+    /** 反射：按 返回类型(可空)+参数类型 找方法（参数类型用原始类型名，混淆不影响）
+     *  注意：同签名可能有多个方法（如 zo.b0 的 I/W），需全部 hook */
     private static Method findMethodBySignature(Class<?> clazz, String returnType, String... paramTypes) {
-        if (clazz == null) return null;
+        List<Method> all = findMethodsBySignature(clazz, returnType, paramTypes);
+        return all.isEmpty() ? null : all.get(0);
+    }
+
+    private static List<Method> findMethodsBySignature(Class<?> clazz, String returnType, String... paramTypes) {
+        List<Method> result = new ArrayList<>();
+        if (clazz == null) return result;
         try {
             for (Method m : clazz.getDeclaredMethods()) {
                 if (m.isBridge() || m.isSynthetic()) continue;
@@ -94,10 +110,10 @@ public class MainHook implements IXposedHookLoadPackage {
                 }
                 if (!ok) continue;
                 if (returnType != null && !m.getReturnType().getName().equals(returnType)) continue;
-                return m;
+                result.add(m);
             }
         } catch (Throwable ignored) {}
-        return null;
+        return result;
     }
 
     /** 安全 hook：try-catch 包裹，失败静默并记日志 */
@@ -170,14 +186,40 @@ public class MainHook implements IXposedHookLoadPackage {
     @Override
     public void handleLoadPackage(LoadPackageParam lpparam) throws Throwable {
         if (!lpparam.packageName.equals("com.chaoxing.mobile")) return;
+        debugLog("=== handleLoadPackage enter: " + System.currentTimeMillis());
+        try {
+            System.loadLibrary("dexkit");
+            debugLog("loadLibrary dexkit OK");
+        } catch (Throwable t) {
+            debugLog("loadLibrary dexkit FAILED: " + t);
+        }
 
         // DexKit：加固场景（梆梆 SecNeo）必须用 ClassLoader 方式创建，useMemoryDexFile=true
         try (DexKitBridge bridge = DexKitBridge.create(lpparam.classLoader, true)) {
+            debugLog("DexKitBridge.create OK");
             installCoreHooks(bridge, lpparam);
+        } catch (Throwable t) {
+            debugLog("DexKitBridge.create FAILED: " + t);
         }
-        installWebViewHooks(lpparam);
-        installFileReplaceHook(lpparam);
-        installExamSnapshotHook(lpparam);
+        try {
+            installWebViewHooks(lpparam);
+            debugLog("installWebViewHooks OK");
+        } catch (Throwable t) {
+            debugLog("installWebViewHooks FAILED: " + t);
+        }
+        try {
+            installFileReplaceHook(lpparam);
+            debugLog("installFileReplaceHook OK");
+        } catch (Throwable t) {
+            debugLog("installFileReplaceHook FAILED: " + t);
+        }
+        try {
+            installExamSnapshotHook(lpparam);
+            debugLog("installExamSnapshotHook OK");
+        } catch (Throwable t) {
+            debugLog("installExamSnapshotHook FAILED: " + t);
+        }
+        debugLog("=== handleLoadPackage done");
     }
 
     /** 核心 hook 区：全部走 DexKit 结构匹配 + 硬编码名回退 */
@@ -259,15 +301,24 @@ public class MainHook implements IXposedHookLoadPackage {
                 clazz = findClassByMethods(bridge, loader, "db-query",
                         ObfuscationMap.CLASS_DB_QUERY, "androidx.lifecycle.LiveData", "android.content.Context", "int", "int");
             }
-            Method m = findMethodBySignature(clazz, "androidx.lifecycle.LiveData",
+            // 注意：zo.b0 的 I/W 方法签名相同 ((Context,int,int)->LiveData)，必须 hook 全部匹配方法
+            List<Method> methods = findMethodsBySignature(clazz, "androidx.lifecycle.LiveData",
                     "android.content.Context", "int", "int");
-            hookMethodSafe(m, new XC_MethodHook() {
-                @Override protected void beforeHookedMethod(MethodHookParam param) {
-                    if (param.args.length == 3 && param.args[2] instanceof Integer) {
-                        if ((Integer) param.args[2] == 3) param.args[2] = 15;
+            debugLog("db-query: clazz=" + (clazz != null ? clazz.getName() : "null")
+                    + " matchedMethods=" + methods.size());
+            for (Method m : methods) {
+                hookMethodSafe(m, new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        if (param.args.length == 3 && param.args[2] instanceof Integer) {
+                            int pageSize = (Integer) param.args[2];
+                            if (pageSize == 3) {
+                                param.args[2] = 15;
+                                debugLog("db-query." + param.method.getName() + ": pageSize 3 -> 15");
+                            }
+                        }
                     }
-                }
-            }, "db-query.W");
+                }, "db-query." + m.getName());
+            }
         }
 
         // 6. q1.c1()：聊天列表过滤（新版 q1 已是 Runnable，此 hook 可能失效——失败静默）
