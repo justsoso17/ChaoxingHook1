@@ -1,40 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- iOS Glass Palette -->
-    <color name="ios_bg">#FFF2F2F7</color>
-    <color name="ios_card">#CCFFFFFF</color>
-    <color name="ios_card_stroke">#1A000000</color>
-    <color name="ios_text_primary">#FF000000</color>
-    <color name="ios_text_secondary">#FF6D6D72</color>
-    <color name="ios_text_hint">#FFC7C7CC</color>
-    <color name="ios_tint">#FF007AFF</color>
-    <color name="ios_tint_dark">#FF0062CC</color>
-    <color name="ios_separator">#FFE5E5EA</color>
-    <color name="ios_destructive">#FFFF3B30</color>
-    <color name="ios_switch_on">#FF34C759</color>
-    <color name="ios_switch_off">#FFE9E9EA</color>
-    <color name="ios_switch_thumb">#FFFFFFFF</color>
-    <color name="ios_glass_overlay">#CCF2F2F7</color>
-
-    <!-- Aliases for existing code compatibility -->
     <color name="white">#FFFFFFFF</color>
-    <color name="black">#FF000000</color>
-    <color name="gray">#FF8E8E93</color>
-    <color name="light_gray">#FFD1D1D6</color>
-
-    <color name="mi_background">@color/ios_bg</color>
-    <color name="mi_card">@color/ios_card</color>
-    <color name="mi_card_row">#99FFFFFF</color>
-    <color name="mi_card_hover">#1A000000</color>
-    <color name="mi_text_primary">@color/ios_text_primary</color>
-    <color name="mi_text_secondary">@color/ios_text_secondary</color>
-    <color name="mi_text_hint">@color/ios_text_hint</color>
-    <color name="mi_divider">@color/ios_separator</color>
-    <color name="mi_switch_on">@color/ios_switch_on</color>
-    <color name="mi_switch_off">@color/ios_switch_off</color>
-    <color name="mi_switch_thumb_off">@color/ios_switch_thumb</color>
-    <color name="mi_switch_track_alpha">#4C34C759</color>
-    <color name="mi_primary">@color/ios_tint</color>
-    <color name="mi_primary_dark">@color/ios_tint_dark</color>
-    <color name="mi_accent">@color/ios_tint</color>
+    <color name="ios_tint">#FF007AFF</color>
 </resources>
