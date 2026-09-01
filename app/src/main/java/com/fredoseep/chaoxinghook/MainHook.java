@@ -58,9 +58,20 @@ public class MainHook implements IXposedHookLoadPackage {
     // 策略：优先用 DexKit 按"类名(可空)+方法签名"结构匹配（不依赖方法名），
     // 找不到再回退到旧的硬编码类名，最大化 hook 在版本更新后的存活率。
 
-    /** 按 类名(可空)+方法签名 查找类；返回 null 表示未找到（调用方自行回退） */
+    /** 按 类名(可空)+方法签名 查找类（默认限 com.chaoxing.mobile 包）；返回 null 表示未找到（调用方自行回退） */
     private static Class<?> findClassByMethods(DexKitBridge bridge, ClassLoader loader,
             String tag, String className, String returnType, String... paramTypes) {
+        return findClassByMethodsImpl(bridge, loader, tag, className, false, returnType, paramTypes);
+    }
+
+    /** 全包搜索版：顶级混淆包（如 y6e）不在 com.chaoxing.mobile 下，必须放开包名限制 */
+    private static Class<?> findClassByMethodsEverywhere(DexKitBridge bridge, ClassLoader loader,
+            String tag, String className, String returnType, String... paramTypes) {
+        return findClassByMethodsImpl(bridge, loader, tag, className, true, returnType, paramTypes);
+    }
+
+    private static Class<?> findClassByMethodsImpl(DexKitBridge bridge, ClassLoader loader,
+            String tag, String className, boolean searchEverywhere, String returnType, String... paramTypes) {
         try {
             MethodMatcher mm = MethodMatcher.create();
             if (returnType != null) mm = mm.returnType(returnType);
@@ -68,14 +79,16 @@ public class MainHook implements IXposedHookLoadPackage {
             ClassMatcher cm = ClassMatcher.create()
                     .methods(MethodsMatcher.create().methods(List.of(mm)));
             if (className != null) cm = cm.className(className);
-            FindClass fc = FindClass.create().searchPackages("com.chaoxing.mobile").matcher(cm);
+            FindClass fc = FindClass.create();
+            if (!searchEverywhere) fc = fc.searchPackages("com.chaoxing.mobile");
+            fc = fc.matcher(cm);
             ClassDataList list = bridge.findClass(fc);
             ClassData cd = list.singleOrThrow(() -> new IllegalStateException(tag + " multiple matches"));
             Class<?> clazz = cd.getInstance(loader);
             XposedBridge.log("Chaoxing DexKit[" + tag + "]: " + clazz.getName());
             return clazz;
         } catch (Throwable t) {
-            // 找不到或非唯一，走回退链
+            debugLog("DexKit[" + tag + "] 结构匹配失败: " + t.getMessage());
         }
         if (className != null) {
             try {
@@ -85,6 +98,7 @@ public class MainHook implements IXposedHookLoadPackage {
                     return clazz;
                 }
             } catch (Throwable ignored) {}
+            debugLog("DexKit[" + tag + "] 回退类不存在: " + className);
         }
         return null;
     }
@@ -118,7 +132,10 @@ public class MainHook implements IXposedHookLoadPackage {
 
     /** 安全 hook：try-catch 包裹，失败静默并记日志 */
     private static void hookMethodSafe(Method method, XC_MethodHook callback, String tag) {
-        if (method == null) return;
+        if (method == null) {
+            debugLog("Hook[" + tag + "]: 方法未找到（类名或签名已变化）");
+            return;
+        }
         try {
             XposedBridge.hookMethod(method, callback);
             XposedBridge.log("Chaoxing DexKit[" + tag + "]: hooked " + method.toGenericString());
@@ -151,17 +168,11 @@ public class MainHook implements IXposedHookLoadPackage {
         public static final String METHOD_ADAPTER_GET_ITEM_COUNT = "getItemCount";
         public static final String FIELD_ADAPTER_LIST_A = "a";
         public static final String FIELD_ADAPTER_LIST_F82688A = "f82688a";
-        public static final String CLASS_DB_QUERY = "zo.b0";
+        public static final String CLASS_DB_QUERY = "y6e"; // 7.0.1（6.7.8 为 zo.b0，顶级混淆包，勿加包前缀）
         public static final String METHOD_DB_QUERY_W = "W";
-        public static final String CLASS_CHAT_MANAGER_Q1 = "com.chaoxing.mobile.chat.manager.q1";
-        public static final String METHOD_CHAT_MANAGER_C1 = "c1";
+        public static final String CLASS_CHAT_MANAGER = "com.chaoxing.mobile.chat.manager.b"; // 7.0.1（6.7.8 为 chat.manager.q1）
         public static final String CLASS_EM_CMD_MESSAGE_BODY = "com.hyphenate.chat.EMCmdMessageBody";
         public static final String METHOD_EM_CMD_ACTION = "action";
-        public static final String CLASS_PLAYER_FRAGMENT = "com.chaoxing.mobile.player.course.CoursePlayerFragment";
-        public static final String METHOD_PLAYER_PA = "Pa";
-        public static final String METHOD_PLAYER_WA = "Wa";
-        public static final String CLASS_DOT_RES = "com.chaoxing.mobile.player.course.model.CourseDotRes";
-        public static final String METHOD_DOT_RES_ROLLBACK = "isRollbackStatus";
     }
 
     private static class SignConfig {
@@ -194,6 +205,13 @@ public class MainHook implements IXposedHookLoadPackage {
             debugLog("loadLibrary dexkit FAILED: " + t);
         }
 
+        try {
+            installProcessExitHook();
+            debugLog("installProcessExitHook OK");
+        } catch (Throwable t) {
+            debugLog("installProcessExitHook FAILED: " + t);
+        }
+
         // DexKit：加固场景（梆梆 SecNeo）必须用 ClassLoader 方式创建，useMemoryDexFile=true
         try (DexKitBridge bridge = DexKitBridge.create(lpparam.classLoader, true)) {
             debugLog("DexKitBridge.create OK");
@@ -223,6 +241,31 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     /** 核心 hook 区：全部走 DexKit 结构匹配 + 硬编码名回退 */
+    /**
+     * Block process termination triggered by the target app's risk checks.
+     * Both common Java exit paths are controlled by the existing exam-risk switch.
+     */
+    private void installProcessExitHook() {
+        XC_MethodHook exitHook = new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                if (!getSignConfig().bypassExamCheat) return;
+
+                int status = 0;
+                if (param.args.length > 0 && param.args[0] instanceof Integer) {
+                    status = (Integer) param.args[0];
+                }
+                param.setResult(null);
+                XposedBridge.log("Chaoxing [exam-risk]: blocked process exit, status=" + status);
+                debugLog("process-exit blocked: " + param.method.getDeclaringClass().getName()
+                        + "." + param.method.getName() + "(" + status + ")");
+            }
+        };
+
+        XposedHelpers.findAndHookMethod(System.class, "exit", int.class, exitHook);
+        XposedHelpers.findAndHookMethod(Runtime.class, "exit", int.class, exitHook);
+    }
+
     private void installCoreHooks(DexKitBridge bridge, LoadPackageParam lpparam) {
         ClassLoader loader = lpparam.classLoader;
 
@@ -292,9 +335,10 @@ public class MainHook implements IXposedHookLoadPackage {
             }, "record-adapter.getItemCount");
         }
 
-        // 5. zo.b0.W(Context, int, int) -> LiveData：数据库查询分页大小 3 -> 15
+        // 5. y6e.W/I(Context, int, int) -> LiveData：数据库查询分页大小 3 -> 15
+        //    注意：该类在顶级混淆包（7.0.1=y6e，6.7.8=zo.b0），必须用全包搜索的结构匹配
         {
-            Class<?> clazz = findClassByMethods(bridge, loader, "db-query",
+            Class<?> clazz = findClassByMethodsEverywhere(bridge, loader, "db-query",
                     null, "androidx.lifecycle.LiveData", "android.content.Context", "int", "int");
             if (clazz == null) {
                 // 类名也变化时回退旧名
@@ -321,83 +365,52 @@ public class MainHook implements IXposedHookLoadPackage {
             }
         }
 
-        // 6. q1.c1()：聊天列表过滤（新版 q1 已是 Runnable，此 hook 可能失效——失败静默）
+        // 6. 聊天列表过滤：移除 type==20 的官方推送会话
+        //    7.0.1：chat.manager.b 的 N2(List,boolean)->void 与 r0(List,boolean)->int
+        //    （6.7.8 为 q1.c1()，已消失）；两方法首参均为主界面会话列表，前置过滤即可
         {
-            Class<?> clazz = findClassByMethods(bridge, loader, "chat-q1",
-                    ObfuscationMap.CLASS_CHAT_MANAGER_Q1, "java.util.List", (String[]) new String[0]);
+            Class<?> clazz = findClassByMethods(bridge, loader, "chat-filter",
+                    ObfuscationMap.CLASS_CHAT_MANAGER, "void", "java.util.List", "boolean");
             if (clazz == null) {
-                try { clazz = XposedHelpers.findClassIfExists(ObfuscationMap.CLASS_CHAT_MANAGER_Q1, loader); } catch (Throwable ignored) {}
+                try { clazz = XposedHelpers.findClassIfExists(ObfuscationMap.CLASS_CHAT_MANAGER, loader); } catch (Throwable ignored) {}
             }
-            Method m = findMethodBySignature(clazz, "java.util.List", new String[0]);
-            hookMethodSafe(m, new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam param) {
-                    Object result = param.getResult();
-                    if (result instanceof java.util.List) {
-                        java.util.List<?> list = (java.util.List<?>) result;
-                        for (int i = list.size() - 1; i >= 0; i--) {
-                            Object info = list.get(i);
-                            if (info != null && info.getClass().getSimpleName().equals("ConversationInfo")) {
-                                if ((Integer) XposedHelpers.callMethod(info, "getType") == 20) {
-                                    list.remove(i);
+            if (clazz != null) {
+                XC_MethodHook filterHook = new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        try {
+                            if (param.args.length > 0 && (param.args[0] instanceof java.util.List)) {
+                                int removed = 0;
+                                java.util.List<?> list = (java.util.List<?>) param.args[0];
+                                for (int i = list.size() - 1; i >= 0; i--) {
+                                    Object info = list.get(i);
+                                    if (info != null
+                                            && "com.chaoxing.mobile.chat.ConversationInfo".equals(info.getClass().getName())
+                                            && (Integer) XposedHelpers.callMethod(info, "getType") == 20) {
+                                        list.remove(i);
+                                        removed++;
+                                    }
                                 }
+                                if (removed > 0) debugLog("chat-filter: 移除 " + removed + " 个 type==20 会话");
                             }
-                        }
+                        } catch (Throwable ignored) {}
                     }
+                };
+                // 同签名方法可能不止一个，全部 hook（过滤器按元素类型自判，误挂无副作用）
+                for (Method m : findMethodsBySignature(clazz, "void", "java.util.List", "boolean")) {
+                    hookMethodSafe(m, filterHook, "chat-filter.voidListBool");
                 }
-            }, "chat-q1.c1");
+                for (Method m : findMethodsBySignature(clazz, "int", "java.util.List", "boolean")) {
+                    hookMethodSafe(m, filterHook, "chat-filter.intListBool");
+                }
+            } else {
+                debugLog("Hook[chat-filter]: manager 类未找到");
+            }
         }
 
         // 7. EMCmdMessageBody.action()：环信 SDK 库类（第三方库不混淆，保持硬编码）
         try {
             XposedBridge.hookAllMethods(XposedHelpers.findClass(ObfuscationMap.CLASS_EM_CMD_MESSAGE_BODY, loader), ObfuscationMap.METHOD_EM_CMD_ACTION, new XC_MethodHook() { @Override protected void afterHookedMethod(MethodHookParam param) { Object result = param.getResult(); if (result != null && "REVOKE_FLAG".equals(result.toString())) { param.setResult("BLOCK_REVOKE_FLAG"); } } });
         } catch (Throwable t) {}
-
-        // 8. CoursePlayerFragment.Pa()/Wa()：原生播放器行为上报拦截（防刷课）
-        //    注意：Pa/Wa 在 6.7.8 为无参方法（旧代码 Pa(int) 签名错误已修正）
-        {
-            Class<?> frag = findClassByMethods(bridge, loader, "player-frag",
-                    ObfuscationMap.CLASS_PLAYER_FRAGMENT, null, (String[]) new String[0]);
-            if (frag == null) {
-                try { frag = XposedHelpers.findClassIfExists(ObfuscationMap.CLASS_PLAYER_FRAGMENT, loader); } catch (Throwable ignored) {}
-            }
-            if (frag != null) {
-                try {
-                    XposedBridge.hookAllMethods(frag, ObfuscationMap.METHOD_PLAYER_PA, new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                            param.setResult(null);
-                            XposedBridge.log("Chaoxing [物理超度]: 成功拦截 拖拽行为 上报 (Pa)");
-                        }
-                    });
-                } catch (Throwable t) { XposedBridge.log("Chaoxing Error (Pa hook): " + t.getMessage()); }
-                try {
-                    XposedBridge.hookAllMethods(frag, ObfuscationMap.METHOD_PLAYER_WA, new XC_MethodHook() {
-                        @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                            param.setResult(null);
-                            XposedBridge.log("Chaoxing [物理超度]: 成功拦截 暂停/切后台行为 上报 (Wa)");
-                        }
-                    });
-                } catch (Throwable t) { XposedBridge.log("Chaoxing Error (Wa hook): " + t.getMessage()); }
-                XposedBridge.log("Chaoxing: 播放器上报拦截已安装 " + frag.getName());
-            }
-        }
-
-        // 9. CourseDotRes.isRollbackStatus()：无视服务端进度回退指令
-        {
-            Class<?> clazz = findClassByMethods(bridge, loader, "dot-res",
-                    ObfuscationMap.CLASS_DOT_RES, "boolean", (String[]) new String[0]);
-            if (clazz == null) {
-                try { clazz = XposedHelpers.findClassIfExists(ObfuscationMap.CLASS_DOT_RES, loader); } catch (Throwable ignored) {}
-            }
-            Method m = findMethodBySignature(clazz, "boolean", new String[0]);
-            hookMethodSafe(m, new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    if (Boolean.TRUE.equals(param.getResult())) {
-                        param.setResult(false);
-                        XposedBridge.log("Chaoxing [防回退]: 成功没收服务器的进度回退指令！");
-                    }
-                }
-            }, "dot-res.isRollbackStatus");
-        }
     }
 
     /** 从 ViewHolder 中找 TextView 字段：优先指定名，字段名混淆后改找任意 TextView 类型字段 */
@@ -542,81 +555,6 @@ public class MainHook implements IXposedHookLoadPackage {
                                     }
                                 }
                                 if (url == null) return;
-
-                                // ==========================================
-                                // 【明文调参测试】：劫持 H5 小报告，重组明文时间参数
-                                // ==========================================
-                                if (url.contains("/multimedia/log/a/")) {
-                                    try {
-                                        String newUrl = url;
-
-                                        // 1. 提取视频总长度 duration
-                                        Pattern durationPattern = Pattern.compile("duration=(\\d+)");
-                                        Matcher durationMatcher = durationPattern.matcher(url);
-                                        if (durationMatcher.find()) {
-                                            String durationVal = durationMatcher.group(1);
-                                            long durationSeconds = Long.parseLong(durationVal);
-
-                                            // 2. 强行将当前进度 playingTime 填满，伪装成已看完
-                                            newUrl = newUrl.replaceAll("playingTime=\\d+", "playingTime=" + durationVal);
-                                            newUrl = newUrl.replaceAll("clipTime=[^&]*", "clipTime=0_" + durationVal);
-
-                                            // 3. 关键：将客户端时间戳 cxtime 往未来平移一个视频总长度（毫秒），模拟真实的物理观看耗时
-                                            Pattern cxTimePattern = Pattern.compile("cxtime=(\\d+)");
-                                            Matcher cxTimeMatcher = cxTimePattern.matcher(url);
-                                            if (cxTimeMatcher.find()) {
-                                                long originalCxTime = Long.parseLong(cxTimeMatcher.group(1));
-                                                long fakeCxTime = originalCxTime + (durationSeconds * 1000);
-                                                newUrl = newUrl.replaceAll("cxtime=\\d+", "cxtime=" + fakeCxTime);
-                                            }
-                                        }
-
-                                        // 4. 调整行为标记 isdrag
-                                        // 可以测试改为 0 (伪装成最安全的常规播放心跳)
-                                        // 如果不行，也可以手动改成 4 (完播标记) 看看后端更认哪一个
-                                        newUrl = newUrl.replaceAll("isdrag=\\d+", "isdrag=0");
-
-                                        XposedBridge.log("Chaoxing [调参测试] 原始 URL: " + url);
-                                        XposedBridge.log("Chaoxing [调参测试] 篡改 URL: " + newUrl);
-
-                                        // 5. 拿着调参后的新 URL 代替前端向服务器发包
-                                        URL targetUrl = new URL(newUrl);
-                                        HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
-                                        conn.setRequestMethod("GET");
-
-                                        String cookie = android.webkit.CookieManager.getInstance().getCookie(url);
-                                        if (cookie != null) conn.setRequestProperty("Cookie", cookie);
-                                        conn.setRequestProperty("Accept-Encoding", "gzip");
-
-                                        InputStream is = conn.getInputStream();
-                                        String encoding = conn.getContentEncoding();
-                                        if (encoding != null && encoding.toLowerCase().contains("gzip")) {
-                                            is = new java.util.zip.GZIPInputStream(is);
-                                        }
-
-                                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                        byte[] buffer = new byte[4096];
-                                        int len;
-                                        while ((len = is.read(buffer)) != -1) baos.write(buffer, 0, len);
-                                        String jsonStr = new String(baos.toByteArray(), "UTF-8");
-
-                                        XposedBridge.log("Chaoxing [调参测试] 服务器返回: " + jsonStr);
-
-                                        // 6. 将服务器的原始回应直接丢回给前端 WebView
-                                        Class<?> responseClass = XposedHelpers.findClassIfExists("android.webkit.WebResourceResponse", lpparam.classLoader);
-                                        if (responseClass != null) {
-                                            innerParam.setResult(XposedHelpers.newInstance(
-                                                    responseClass,
-                                                    "application/json",
-                                                    "utf-8",
-                                                    new ByteArrayInputStream(jsonStr.getBytes("UTF-8"))
-                                            ));
-                                        }
-                                        return; // 阻断原请求
-                                    } catch (Exception e) {
-                                        XposedBridge.log("Chaoxing Error (Param Tweak): " + e.getMessage());
-                                    }
-                                }
 
                                 if (getSignConfig().bypassExamCheat && (url.startsWith("https://mooc1-api.chaoxing.com/keeper/api/receiveExamLogs") || url.contains("/exam-ans/exam/phone/exit-count")||url.contains("https://data-xxt.aichoxing.com/analysis/ac_event")||url.contains("pan-yz.chaoxing.com/upload"))) {
                                     try {
@@ -891,6 +829,23 @@ public class MainHook implements IXposedHookLoadPackage {
                                 }
                             }
                         });
+                        // ===== 页面加载完成注入：手势/位置签到自动完成 =====
+                        XposedBridge.hookAllMethods(targetClass, "onPageFinished", new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam innerParam) throws Throwable {
+                                try {
+                                    if (innerParam.args.length < 2 || !(innerParam.args[0] instanceof android.webkit.WebView)) return;
+                                    android.webkit.WebView wv = (android.webkit.WebView) innerParam.args[0];
+                                    SignConfig cfg = getSignConfig();
+
+                                    // 复制解除（功能16）：7.0.1 中 notAllowCopy.css 已不再出现，
+                                    // 改为通用"强制可选中/可复制"注入（所有页面，幂等）
+                                    if (cfg.enableCopyRestriction) {
+                                        wv.evaluateJavascript(buildCopyEnablerJs(), null);
+                                    }
+                                } catch (Throwable ignored) {}
+                            }
+                        });
                         targetClass = targetClass.getSuperclass();
                     }
                 }
@@ -1013,6 +968,27 @@ public class MainHook implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             // 6.7.8 起 f1.q0 已不存在：上传拦截由 URL 层（pan-yz.chaoxing.com/upload）承担
         }
+    }
+
+    /**
+     * 通用"强制可选中/可复制"注入（功能16，7.0.1 起替代 notAllowCopy.css 拦截）：
+     * 1. 覆盖 user-select 为 auto
+     * 2. 清除 document/body 上的内联阻止属性（onselectstart/oncopy/oncut/oncontextmenu/ondragstart）
+     * 3. 捕获阶段 stopPropagation，拦截页面注册的阻止事件
+     * 幂等（__cxCopyOn 标志），每次 onPageFinished 注入一次
+     */
+    private String buildCopyEnablerJs() {
+        return "(function(){try{"
+                + "if(window.__cxCopyOn)return;window.__cxCopyOn=1;"
+                + "var s=document.createElement('style');"
+                + "s.textContent='*,*::before,*::after{-webkit-user-select:auto!important;user-select:text!important;-webkit-touch-callout:default!important;}';"
+                + "(document.head||document.documentElement).appendChild(s);"
+                + "['onselectstart','oncopy','oncut','oncontextmenu','ondragstart'].forEach(function(k){"
+                + "try{document[k]=null;var b=document.body;if(b)b[k]=null;}catch(e){}});"
+                + "['selectstart','copy','cut','contextmenu','dragstart'].forEach(function(t){"
+                + "window.addEventListener(t,function(e){e.stopPropagation();},true);"
+                + "document.addEventListener(t,function(e){e.stopPropagation();},true);});"
+                + "}catch(e){}})();";
     }
 
     private double[] calculateTriangulation(List<LocationPoint> points) {

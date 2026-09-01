@@ -21,8 +21,8 @@ object ConfigManager {
         var name: String = "",
         var randomizeDeviceFlag: Boolean = false,
         var autoCalculateLocation: Boolean = false,
-        var bypassExamCheat: Boolean = false,
-        var enableCopyRestriction: Boolean = false,
+        var bypassExamCheat: Boolean = true,
+        var enableCopyRestriction: Boolean = true,
         var replaceExamScreenshot: Boolean = false,
         var fakeImagePath: String = "",
     )

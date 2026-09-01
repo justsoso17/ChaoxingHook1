@@ -86,8 +86,8 @@ fun SettingsScreen() {
                 bottom = innerPadding.calculateBottomPadding(),
             )) {
 
-                // ============ 定位 ============
-                item { SmallTitle(text = "定位") }
+                // ============ 签到（原定位） ============
+                item { SmallTitle(text = "签到") }
                 item {
                     Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         SwitchPreference(
@@ -174,7 +174,7 @@ fun SettingsScreen() {
                         )
                         SwitchPreference(
                             title = "考试风控拦截",
-                            summary = "拦截考试日志上报与切出计数（含防切屏 status 伪装）",
+                            summary = "拦截考试日志、切屏检测和异常进程退出",
                             checked = config.bypassExamCheat,
                             onCheckedChange = { update { bypassExamCheat = it } },
                         )
