@@ -1,15 +1,14 @@
 *.iml
 .gradle
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+.idea/
 .DS_Store
 /build
 /captures
 .externalNativeBuild
 .cxx
 local.properties
+.claude/
+.kotlin/
+# 逆向留档（脱壳 dex/jadx 反编译/APK/截图），体积大且敏感，不入库
+/work/

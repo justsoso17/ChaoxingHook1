@@ -1,21 +1,38 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+}
+
+// Load Amap keys from local.properties (gitignored)
+def localProps = new Properties()
+def localFile = rootProject.file('local.properties')
+if (localFile.exists()) {
+    localProps.load(localFile.newDataInputStream())
 }
 
 android {
     namespace 'com.fredoseep.chaoxinghook'
     compileSdk {
-        version = release(36)
+        version = release(37)
     }
 
     defaultConfig {
         applicationId "com.fredoseep.chaoxinghook"
         minSdk 24
-        targetSdk 36
+        // targetSdk 35（Android 16 兼容模式）：高德 SDK(10.0.600) 未适配 16KB 页对齐，
+        // targetSdk>=36 时其 so 在 16KB 设备上无法加载；compileSdk 37 不受影响
+        targetSdk 35
         versionCode 1
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // Inject keys into AndroidManifest and BuildConfig
+        manifestPlaceholders = [
+                AMAP_MAP_KEY: localProps.getProperty('AMAP_MAP_KEY', 'MISSING_KEY')
+        ]
+        buildConfigField 'String', 'AMAP_WEB_KEY',
+                "\"${localProps.getProperty('AMAP_WEB_KEY', 'MISSING_KEY')}\""
     }
 
     buildTypes {
@@ -28,12 +45,24 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+    buildFeatures {
+        buildConfig true
+        compose true
+    }
 }
 
 dependencies {
     implementation libs.appcompat
     implementation libs.material
     compileOnly 'de.robv.android.xposed:api:82'
+    // 高德 3D 地图 SDK V11.2.100（本地集成：16KB 对齐适配，旧版 10.0.600 的 so 未 16KB 对齐）
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // DexKit：运行时反混淆定位 hook 点（加固场景需 ClassLoader 方式创建）
+    implementation libs.dexkit
+    // Compose + MIUIX（HyperOS 风格组件库，设置页 UI）
+    implementation libs.activity.compose
+    implementation libs.miuix.ui
+    implementation libs.miuix.preference
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
