@@ -168,7 +168,7 @@ fun SettingsScreen() {
                     Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
                         SwitchPreference(
                             title = "随机指纹",
-                            summary = "每次注入随机的设备指纹（CLIENT_DEVICE_FLAG）",
+                            summary = "用于单设备多账号签到",
                             checked = config.randomizeDeviceFlag,
                             onCheckedChange = { update { randomizeDeviceFlag = it } },
                         )
