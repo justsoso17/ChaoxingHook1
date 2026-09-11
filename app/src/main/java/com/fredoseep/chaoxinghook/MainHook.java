@@ -49,6 +49,8 @@ public class MainHook implements IXposedHookLoadPackage {
 
     private static final Set<String> hookedWebViewClients = new HashSet<>();
     private static final String FAKE_UPLOAD_FILE_PATH = "/storage/emulated/0/Download/fake_exam_image.png";
+    // 长按直达模块主页：已注入长按监听的行视图（弱引用防泄漏）
+    private static final java.util.WeakHashMap<android.view.View, Boolean> injectedLongPressRows = new java.util.WeakHashMap<>();
 
     // 核心修复：添加防重入标志，防止读取配置文件时触发无限递归死循环
     private static final ThreadLocal<Boolean> READING_CONFIG = ThreadLocal.withInitial(() -> false);
@@ -236,6 +238,12 @@ public class MainHook implements IXposedHookLoadPackage {
             debugLog("installExamSnapshotHook OK");
         } catch (Throwable t) {
             debugLog("installExamSnapshotHook FAILED: " + t);
+        }
+        try {
+            installLongPressModuleEntry(lpparam);
+            debugLog("installLongPressModuleEntry OK");
+        } catch (Throwable t) {
+            debugLog("installLongPressModuleEntry FAILED: " + t);
         }
         debugLog("=== handleLoadPackage done");
     }
@@ -967,6 +975,95 @@ public class MainHook implements IXposedHookLoadPackage {
             );
         } catch (Throwable t) {
             // 6.7.8 起 f1.q0 已不存在：上传拦截由 URL 层（pan-yz.chaoxing.com/upload）承担
+        }
+    }
+
+    /**
+     * 长按「我」页的"设置"行直达模块主页：
+     * 「我」页 = com.chaoxing.study.mine.MineFragment2（jadx 7.0.1 确认），
+     * 设置行 = CardView(cv_settings) 可点击，内层 TextView 不可点击。
+     * 两路注入：
+     *   A. 精准：hook MineFragment2.onViewCreated，根布局里找"设置"TextView，向上找可点击祖先注入；
+     *   B. 兜底：hook View.dispatchAttachedToWindow（ViewGroup 回调 super，全视图必经），任何"设置"文本
+     *      可点击行同样注入（不要求 TextView 自身可点击——CardView 结构下 TextView 均不可点击）。
+     * 原单击行为不变；行视图弱引用表去重。
+     */
+    private void installLongPressModuleEntry(LoadPackageParam lpparam) {
+        // A. 精准注入：MineFragment2.onViewCreated（viewBinding 静态布局，挂载一次即生效）
+        try {
+            Class<?> frag = XposedHelpers.findClassIfExists("com.chaoxing.study.mine.MineFragment2", lpparam.classLoader);
+            if (frag != null) {
+                XposedBridge.hookAllMethods(frag, "onViewCreated", new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        try {
+                            if (param.args.length < 1 || !(param.args[0] instanceof android.view.View)) return;
+                            android.view.View root = (android.view.View) param.args[0];
+                            root.postDelayed(() -> {
+                                try { injectSettingsLongPressRecursive(root); } catch (Throwable ignored) {}
+                            }, 500);
+                        } catch (Throwable ignored) {}
+                    }
+                });
+            }
+        } catch (Throwable ignored) {}
+
+        // B. 兜底注入：全局视图挂载
+        XC_MethodHook attachHook = new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) {
+                try {
+                    Object obj = param.thisObject;
+                    if (!(obj instanceof android.widget.TextView)) return;
+                    android.widget.TextView tv = (android.widget.TextView) obj;
+                    CharSequence text = tv.getText();
+                    if (text == null || !"设置".contentEquals(text)) return;
+                    injectSettingsLongPress(tv);
+                } catch (Throwable ignored) {}
+            }
+        };
+        XposedBridge.hookAllMethods(android.view.View.class, "dispatchAttachedToWindow", attachHook);
+    }
+
+    /** 对"设置"TextView：向上最多 6 层找可点击行注入长按；找不到则注入 TextView 自身（长按仅覆盖文字区域） */
+    private void injectSettingsLongPress(android.widget.TextView tv) {
+        android.view.View row = tv;
+        for (int i = 0; i < 6 && row.getParent() instanceof android.view.View; i++) {
+            android.view.View parent = (android.view.View) row.getParent();
+            row = parent;
+            if (row.isClickable()) break;
+        }
+        if (injectedLongPressRows.containsKey(row)) return;
+        injectedLongPressRows.put(row, Boolean.TRUE);
+        debugLog("longpress-entry: 已注入设置行长按 (row=" + row.getClass().getName() + ")");
+        row.setOnLongClickListener(v -> {
+            try {
+                android.content.Intent intent = new android.content.Intent("android.intent.action.MAIN");
+                intent.setClassName("com.fredoseep.chaoxinghook", "com.fredoseep.chaoxinghook.SettingsActivity");
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                v.getContext().startActivity(intent);
+                return true;
+            } catch (Throwable t) {
+                return false;
+            }
+        });
+    }
+
+    /** 在视图树中递归查找文本恰为"设置"的 TextView 并注入长按 */
+    private void injectSettingsLongPressRecursive(android.view.View view) {
+        if (view instanceof android.widget.TextView) {
+            android.widget.TextView tv = (android.widget.TextView) view;
+            CharSequence text = tv.getText();
+            if (text != null && "设置".contentEquals(text.toString().trim())) {
+                injectSettingsLongPress(tv);
+                return;
+            }
+        }
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                injectSettingsLongPressRecursive(group.getChildAt(i));
+            }
         }
     }
 
