@@ -13,6 +13,8 @@
 伪造运动数据以获取不正当利益可能构成不当得利或违反平台服务协议
 请务必在合法合规的前提下使用本软件。
 
+中文文档：完整功能清单/hook 点/配置/调试说明见 `kb/` 目录（入口 `kb/README.md`，主文档 `kb/MODULE_NOTES.md`）。
+
 
 This is a lightweight enhancement module for the Chaoxing (Xuexitong) application based on the Xposed/LSPosed framework. It is designed to provide a cleaner, more efficient learning environment by removing intrusive advertisements and optimizing the layout for productivity.
 
@@ -26,7 +28,7 @@ Remove Home Page Banners: Hides the scrolling advertisement banners in the home 
 
 Disable Recommended Feeds: Blocks the infinite "Recommended" post stream at the bottom of the home page, which often includes distracting social-media-style content.
 
-Expand Recent Records: Overrides the hardcoded limit of "Recently Used" items, increasing the visible count from 3 up to 10 to facilitate faster access to frequent resources.
+Expand Recent Records: Overrides the hardcoded limit of "Recently Used" items, increasing the visible count from 3 up to 15 to facilitate faster access to frequent resources.
 
 Remove ads in the message page
 
@@ -35,7 +37,9 @@ Support single device multi-account-signin. You can simply change a singlular ch
 ！！！！！！！！！！！！！！！！！！！！！
 
 How to do the spoof location check in?
-You don't need a UI to configure this. The module dynamically reads your desired coordinates from a local text file.
+Since v1.0 there is a full in-app settings UI (launch the module's "ChaoxingHook 设置" from the launcher): location modify / coordinate triangulation / name & address spoof / random fingerprint / exam risk bypass / copy unlock / exam screenshot replace. Changes save instantly to the config file (root required).
+
+Manual file editing still works. The module dynamically reads your desired coordinates from a local text file.
 
 Open your Android file manager.
 
