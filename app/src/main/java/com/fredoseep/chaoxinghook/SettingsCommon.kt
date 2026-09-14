@@ -25,7 +25,7 @@ import androidx.compose.ui.platform.LocalContext
  */
 
 /**
- * 设置页数据源。所有变更都立刻落盘（写 `chaoxing_loc.txt`，需 root 时用 su cp）。
+ * 设置页数据源。所有变更都立刻落盘（读写 `chaoxing_loc.txt` 都经 `su`，见 [ConfigManager]）。
  *
  * 用 [MutableState] 持有配置：hook 配置是 data class，修改必须走 `copy()` ——
  * `mutableStateOf` 按引用比较，原地 apply 不会触发重组。
@@ -38,21 +38,58 @@ class HookSettingsState internal constructor(
 
     val config: ConfigManager.HookConfig get() = configState.value
 
-    /** 改一项就存一次；保存失败（通常是没 root）会明确提示，不再静默 */
+    init {
+        // 读不到磁盘配置时必须说清楚：否则用户看到的是「默认值」，
+        // 会以为自己的配置丢了；实际上磁盘内容原封未动，而且此时也不会被覆盖。
+        if (ConfigManager.loadFailed) {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(
+                    context,
+                    "无法读取配置（需要 Root 权限），当前显示默认值。获得 Root 前不会覆盖已保存的配置。",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
+    /** 改一项就存一次；保存失败（通常是没 root，或本次没读到配置）会明确提示，不再静默 */
     fun update(block: ConfigManager.HookConfig.() -> Unit) {
         val next = configState.value.copy().apply(block)
         configState.value = next
         val ok = ConfigManager.save(next)
         Toast.makeText(
             context,
-            if (ok) "配置已保存" else "保存失败，可能需要 Root",
+            when {
+                ok -> "配置已保存"
+                ConfigManager.loadFailed -> "未读取到配置，已跳过保存以免覆盖（请先申请 Root）"
+                else -> "保存失败，可能需要 Root"
+            },
             Toast.LENGTH_SHORT,
         ).show()
     }
 
     fun reset() {
-        configState.value = ConfigManager.reset()
-        Toast.makeText(context, "配置已重置", Toast.LENGTH_SHORT).show()
+        configState.value = ConfigManager.HookConfig()
+        // 重置是确认框里显式点过的破坏性操作，ConfigManager.reset() 不受 loadFailed 保护
+        val ok = ConfigManager.reset()
+        Toast.makeText(
+            context,
+            if (ok) "配置已重置" else "重置失败，可能需要 Root",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
+
+    /**
+     * 重新从磁盘读取（用于刚拿到 Root 授权之后）。
+     *
+     * 只在「上次没读到」时才重载：那种情况下内存里是默认值、磁盘才是真相，
+     * 且 [ConfigManager.loadFailed] 会把保存一直挡住，不重载就会卡在"开关点了没反应"。
+     * 反之内存与磁盘一致，重载反而可能顶掉刚敲进去、还没落盘的文本。
+     */
+    fun reload() {
+        if (ConfigManager.loadFailed) {
+            configState.value = ConfigManager.load()
+        }
     }
 }
 
@@ -112,6 +149,8 @@ fun rememberSettingsScaffold(settings: HookSettingsState): SettingsScaffold {
             val output = try {
                 val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
                 val out = p.inputStream.bufferedReader().readText()
+                // 同样要排空 stderr，否则管道写满会让 su 卡在 waitFor()
+                p.errorStream.bufferedReader().readText()
                 p.waitFor()
                 out
             } catch (_: Exception) {
@@ -120,8 +159,12 @@ fun rememberSettingsScaffold(settings: HookSettingsState): SettingsScaffold {
             Handler(Looper.getMainLooper()).post {
                 when {
                     // su -c id 成功且确为 uid=0(root) 才算授权
-                    output.contains("uid=0") ->
+                    output.contains("uid=0") -> {
                         Toast.makeText(context, "已获得 Root 授权", Toast.LENGTH_SHORT).show()
+                        // 启动时因没 Root 而没读到的配置，现在补读一次；
+                        // 否则 loadFailed 会一直挡住保存，表现为"开关点了没反应"
+                        settings.reload()
+                    }
                     // Magisk 在但被拒：多半是之前勾过"记住拒绝"，或超级用户列表里策略为拒绝
                     isMagiskInstalled() ->
                         Toast.makeText(
