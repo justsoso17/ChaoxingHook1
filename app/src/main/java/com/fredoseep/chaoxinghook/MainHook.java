@@ -868,7 +868,7 @@ public class MainHook implements IXposedHookLoadPackage {
                         // ===== 考试防切屏绕过（受"考试风控拦截"开关控制）=====
                         // 学习通切屏时原生注入 CLIENT_WEB_LIFECYCLE {status:10/0}(切出)，
                         // H5 考试页收到后弹警告+上报；把 status 全部伪装成 11(前台) 即可无感通过。
-                        // 实测 3 次切屏全部拦截、警告弹窗消失（见 CHAOXING_REVERSE_NOTES.md 第 5 节）
+                        // 实测 3 次切屏全部拦截、警告弹窗消失
                         if (jsCode.contains("CLIENT_WEB_LIFECYCLE") && getSignConfig().bypassExamCheat) {
                             // 正则需与 cxanalysis 验证版完全一致：\\\\? = 可选反斜杠（兼容 JSON 转义），
                             // 漏一层转义会变成"字面问号"导致永远匹配不上

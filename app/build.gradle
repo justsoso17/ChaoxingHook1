@@ -18,7 +18,10 @@ android {
 
     defaultConfig {
         applicationId "com.fredoseep.chaoxinghook"
-        minSdk 24
+        // minSdk 28（Android 9）：Nuke 组件库（../nuke）的 minSdk 就是 28。
+        // 它只用到 Build.VERSION.SDK_INT == P 的判断，没有真正的 28+ API 调用，
+        // 但 Manifest 合并会挡；本模块的受众（Magisk + LSPosed + 学习通 7.0.1）也都在 9.0+。
+        minSdk 28
         // targetSdk 35（Android 16 兼容模式）：高德 SDK(10.0.600) 未适配 16KB 页对齐，
         // targetSdk>=36 时其 so 在 16KB 设备上无法加载；compileSdk 37 不受影响
         targetSdk 35
@@ -33,6 +36,11 @@ android {
         ]
         buildConfigField 'String', 'AMAP_WEB_KEY',
                 "\"${localProps.getProperty('AMAP_WEB_KEY', 'MISSING_KEY')}\""
+
+        // 只打包 64 位原生库（高德 so + DexKit），armeabi-v7a/x86 全淘汰的设备无需支持
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
@@ -55,15 +63,39 @@ dependencies {
     implementation libs.appcompat
     implementation libs.material
     compileOnly 'de.robv.android.xposed:api:82'
-    // 高德 3D 地图 SDK V11.2.100（本地集成：16KB 对齐适配，旧版 10.0.600 的 so 未 16KB 对齐）
-    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // 本地集成的 SDK（libs/ 下的 jar 与 aar）：
+    // - 高德 3D 地图 SDK V11.2.100（16KB 对齐适配版，旧版 10.0.600 的 so 未对齐）
+    // - Nuke 组件库 nuke-release.aar（自研，仓库外无发布；见下方说明）
+    implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')
     // DexKit：运行时反混淆定位 hook 点（加固场景需 ClassLoader 方式创建）
     implementation libs.dexkit
-    // Compose + MIUIX（HyperOS 风格组件库，设置页 UI）
+    // Compose + 三套 UI 风格：MIUIX（HyperOS）/ Nuke（iOS 果冻风）/ Material 3
+    implementation platform(libs.compose.bom)
     implementation libs.activity.compose
     implementation libs.miuix.ui
     implementation libs.miuix.preference
+    implementation libs.compose.material3
+    implementation libs.compose.material.icons.core
+    // Nuke 的浮层/预测性返回链路直接用到；本地 AAR 不携带传递依赖，必须显式声明
+    implementation libs.navigationevent.compose
+    // Nuke（dev.nuke.ui）以 libs/nuke-release.aar 本地集成。
+    // 它原本走 settings.gradle 的 includeBuild('../nuke')，但那要求源码目录与仓库同级 ——
+    // 别人 clone 下来无法构建。改为 AAR 后开箱即可编译。
+    // 更新方式：cd <nuke 源码目录> && gradlew :nuke:assembleRelease
+    //           cp nuke/build/outputs/aar/nuke-release.aar app/libs/
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
+}
+
+// Miuix 依赖 Compose Multiplatform 的 material3-window-size-class:1.12.0-alpha03，
+// 它又把 androidx material3 拉到 1.5.0-alpha22。本模块只要稳定版，
+// 因此把 material3 家族强制钉在目录里声明的 1.4.0（window-size-class 由 BOM 管理）。
+configurations.configureEach {
+    resolutionStrategy.force(
+            'androidx.compose.material3:material3:1.4.0',
+            'androidx.compose.material3:material3-android:1.4.0',
+            'androidx.compose.material3:material3-window-size-class:1.4.0',
+            'androidx.compose.material3:material3-window-size-class-android:1.4.0',
+    )
 }
