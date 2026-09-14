@@ -26,11 +26,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "My Application"
 include ':app'
-
-// Nuke（../nuke）以组合构建方式组入：改 Nuke 源码后无需重新出 AAR。
-// 它自己的构建里声明了仓库（settings.gradle.kts），依赖解析在那边独立完成。
-includeBuild('../nuke') {
-    dependencySubstitution {
-        substitute module('dev.nuke.ui:nuke') using project(':nuke')
-    }
-}

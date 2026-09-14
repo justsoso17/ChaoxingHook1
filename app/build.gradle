@@ -63,8 +63,10 @@ dependencies {
     implementation libs.appcompat
     implementation libs.material
     compileOnly 'de.robv.android.xposed:api:82'
-    // 高德 3D 地图 SDK V11.2.100（本地集成：16KB 对齐适配，旧版 10.0.600 的 so 未 16KB 对齐）
-    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // 本地集成的 SDK（libs/ 下的 jar 与 aar）：
+    // - 高德 3D 地图 SDK V11.2.100（16KB 对齐适配版，旧版 10.0.600 的 so 未对齐）
+    // - Nuke 组件库 nuke-release.aar（自研，仓库外无发布；见下方说明）
+    implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')
     // DexKit：运行时反混淆定位 hook 点（加固场景需 ClassLoader 方式创建）
     implementation libs.dexkit
     // Compose + 三套 UI 风格：MIUIX（HyperOS）/ Nuke（iOS 果冻风）/ Material 3
@@ -72,11 +74,15 @@ dependencies {
     implementation libs.activity.compose
     implementation libs.miuix.ui
     implementation libs.miuix.preference
-    implementation libs.nuke.ui
     implementation libs.compose.material3
     implementation libs.compose.material.icons.core
-    // Nuke 的浮层/预测性返回链路直接用到，AAR 消费时不传递，显式声明
+    // Nuke 的浮层/预测性返回链路直接用到；本地 AAR 不携带传递依赖，必须显式声明
     implementation libs.navigationevent.compose
+    // Nuke（dev.nuke.ui）以 libs/nuke-release.aar 本地集成。
+    // 它原本走 settings.gradle 的 includeBuild('../nuke')，但那要求源码目录与仓库同级 ——
+    // 别人 clone 下来无法构建。改为 AAR 后开箱即可编译。
+    // 更新方式：cd <nuke 源码目录> && gradlew :nuke:assembleRelease
+    //           cp nuke/build/outputs/aar/nuke-release.aar app/libs/
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core

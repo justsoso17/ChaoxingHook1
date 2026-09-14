@@ -1,10 +1,27 @@
 ---
 标题: ChaoxingHook 变更记录
 日期: 2026-09-14
-版本: 1.7
+版本: 1.8
 状态: 持续追加
 tags: changelog
 ---
+
+## 2026-09-14 v1.13 Nuke 改为本地 AAR（让仓库开箱可构建）
+
+- **问题**：Nuke（自研组件库）此前走 `settings.gradle` 的 `includeBuild('../nuke')` +
+  `dependencySubstitution`，这要求 Nuke 源码目录与本仓库**同级存在** ——
+  别人 clone 下来 Gradle 在 settings 阶段就会失败，**仓库无法构建**。
+- **改法**：预编译的 `nuke-release.aar`（336 KB）放进 `app/libs/` 本地集成，
+  与高德 SDK 的做法一致：
+  - `settings.gradle` 删除 `includeBuild('../nuke')` 整块
+  - `app/build.gradle` 的 `fileTree(include: ['*.jar'], ...)` → `['*.jar', '*.aar']`，
+    并移除 `libs.nuke.ui` 依赖声明
+  - `gradle/libs.versions.toml` 删除 `nuke` 版本与 `nuke-ui` 库条目
+- **验证**：把整个项目复制到 `../nuke` 不存在的孤立目录后 `assembleDebug` **构建成功** ——
+  证明不再依赖仓库外的任何目录。
+- **代价**：改 Nuke 源码后需重新出 AAR（步骤见 MODULE_NOTES §10.5），
+  换来的是任何人都能 clone 即编译。
+- 同步文档：MODULE_NOTES §1（关键依赖/构建）、§7（Nuke 行）、§10.1（改写为仓库无关表述）、§10.5。
 
 ## 2026-09-14 v1.12 学习通 7.0.3 实测通过 + 补回功能 24（分支分叉导致被降级）
 

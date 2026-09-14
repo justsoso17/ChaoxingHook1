@@ -16,9 +16,9 @@ tags: hook 点, DexKit, 配置, 踩坑, 推送规范
 | 目标 | com.chaoxing.mobile（学习通 **7.0.3** 实测 2026-09-14 通过；7.0.1 适配基线 2026-09-01；6.7.8 历史） |
 | 框架 | Xposed API 82（compileOnly），LSPosed 激活 |
 | 语言 | Java（hook）+ Kotlin（配置/设置 UI，Compose，三套风格见 §7） |
-| 关键依赖 | DexKit（运行时反混淆定位，加固场景用 ClassLoader 方式创建）、高德 3D 地图 SDK V11.2.100（本地 libs，16KB 对齐适配版）、MIUIX 0.9.4-rc01 / **Nuke**（`../nuke`，includeBuild 组入）/ Material 3 1.4.0 |
+| 关键依赖 | DexKit（运行时反混淆定位，加固场景用 ClassLoader 方式创建）、高德 3D 地图 SDK V11.2.100（本地 `libs/*.jar` + `jniLibs`，16KB 对齐适配版）、MIUIX 0.9.4-rc01 / **Nuke**（自研，本地 `libs/nuke-release.aar`）/ Material 3 1.4.0 |
 | SDK | compileSdk 37 / **targetSdk 35**（高德旧版 so 未 16KB 对齐，勿随意升 targetSdk）/ **minSdk 28**（Nuke 的 minSdk 就是 28） |
-| 构建 | `gradlew assembleDebug`；**需 local.properties 含 AMAP_MAP_KEY / AMAP_WEB_KEY**（地图选点用）；**需 `../nuke` 存在**（Nuke 走组合构建，AGP 已对齐 9.3.2） |
+| 构建 | `gradlew assembleDebug`；**只需 local.properties 含 AMAP_MAP_KEY / AMAP_WEB_KEY**（地图选点用）。本地集成的 SDK 都在 `app/libs/`，**clone 下来开箱即可编译**，不依赖仓库外的任何目录 |
 | 生效条件 | LSPosed 勾选模块 + 作用域 com.chaoxing.mobile；**更新 APK 后必须强停学习通**（代码不热更） |
 
 ## 2. 架构
@@ -150,7 +150,7 @@ handleLoadPackage（仅 com.chaoxing.mobile）
 | 风格 | 实现文件 | 组件库 | 选择控件 |
 |---|---|---|---|
 | MIUIX（默认） | `SettingsMiuixScreen.kt` | `top.yukonga.miuix.kmp` 0.9.4-rc01（HyperOS） | `SwitchPreference` 开关式单选 |
-| Nuke | `SettingsNukeScreen.kt` | `dev.nuke.ui`（`../nuke`，果冻按压 + 方圆角卡片 + 圆形揭示转场） | `NukeSelectPreference` 浮层 |
+| Nuke | `SettingsNukeScreen.kt` | `dev.nuke.ui`（自研，本地 `libs/nuke-release.aar`；果冻按压 + 方圆角卡片 + 圆形揭示转场） | `NukeSelectPreference` 浮层 |
 | Material 3 | `SettingsMaterial3Screen.kt` | `androidx.compose.material3` 1.4.0 | `RadioButton` |
 
 ```
@@ -240,21 +240,18 @@ Nuke 那套的关键点：
 
 ## 10. 版本控制与推送规范（**推送前必读**）
 
-### 10.1 铁律：只推 `main` 一个分支
+### 10.1 铁律：只保留一个对外分支
 
-**本仓库对外只有 `main` 一个分支。所有改动一律提交到 `main` 后推送，不要新建 feature 分支。**
+**本仓库对外只有一个主分支。所有改动一律提交到主分支后推送，不要新建长期存在的 feature 分支。**
 
-```bash
-git push fork main:main        # 唯一允许的推送目标
-```
+| 场景 | 用法 |
+|---|---|
+| 上游仓库 | 主分支是 `master`，直接在其上提交 / 合并 |
+| Fork 自用 | 主分支建议统一叫 `main`；`origin` 指向上游（**只读，不要推**），推送走自己的 `fork` 远端 |
 
-| 远端 | 地址 | 用途 |
-|---|---|---|
-| `fork` | `github.com/justsoso17/ChaoxingHook1` | **自己的仓库，唯一推送目标** |
-| `origin` | `github.com/fredoseep/ChaoxingHook1` | 上游原作者仓库，**只读，不要推** |
-
-> 需要试验性改动时，用本地临时分支或 `git stash`，**不要 push**；确认无误后合并回 `main` 再推。
-> 推送别忘带 `fork`：`git push main` 会因为默认远端是 `origin/master` 而推错地方。
+> 需要试验性改动时，用本地临时分支或 `git stash`，**不要 push**；确认无误后合并回主分支再推。
+> Fork 自用时推送别忘带远端名：`git push fork main:main` —— 只写 `git push main` 会因为
+> 默认远端是上游而推错地方。
 
 ### 10.2 为什么定这条规矩（两次真实事故）
 
@@ -337,8 +334,9 @@ git ls-tree -r --name-only main
 
 | 项 | 值 |
 |---|---|
-| 仓库体积 | 约 **35.9 MB** / 56 个文件 |
+| 仓库体积 | 约 **35.9 MB** / 57 个文件 |
 | 最大文件 | `app/src/main/jniLibs/arm64-v8a/libAMapSDK_MAP_v11_2_100.so`（24.6 MB） |
+| 本地集成 SDK | `app/libs/amap3dmap-11.2.100.jar`（10.9 MB）、`app/libs/nuke-release.aar`（336 KB） |
 | 已清理 | `app/src/main/jniLibs/armeabi-v7a/`（约 **16.9 MB**）已于 2026-09-14 删除 |
 
 `abiFilters` 只留 `arm64-v8a`，v7a 那两个 `.so` **从不进入 APK**（已对比 app-debug.apk
@@ -346,3 +344,12 @@ git ls-tree -r --name-only main
 
 > **若要重新支持 32 位**：高德 SDK 是本地集成的 **16KB 对齐适配版**，需另取同版本 v7a so
 > 放回 `jniLibs/armeabi-v7a/`，同时改 `build.gradle` 的 `abiFilters`。
+
+> **Nuke 是本地 AAR，不是 includeBuild**：早期用 `includeBuild('../nuke')` + `dependencySubstitution`，
+> 那要求 Nuke 源码与仓库同级，别人 clone 后**无法构建**。现改为 `app/libs/nuke-release.aar`。
+> 改 Nuke 源码后需要重新出包：
+>
+> ```bash
+> cd <nuke 源码目录> && ./gradlew :nuke:assembleRelease
+> cp nuke/build/outputs/aar/nuke-release.aar <本仓库>/app/libs/
+> ```

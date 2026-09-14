@@ -1,5 +1,5 @@
 [versions]
-# AGP 9.3.2：与 ../nuke 的 includeBuild 对齐（两个 build 用同一个 AGP，避免插件类加载冲突）
+# AGP 9.3.2
 agp = "9.3.2"
 kotlin = "2.4.10"
 junit = "4.13.2"
@@ -10,9 +10,8 @@ material = "1.13.0"
 dexkit = "2.2.0"
 miuix = "0.9.4-rc01"
 activityCompose = "1.13.0"
-# Compose BOM + 各 UI 风格库：Nuke（dev.nuke.ui）与 Material 3 供设置页风格切换使用
+# Compose BOM + Material 3 供设置页风格切换使用
 composeBom = "2026.08.00"
-nuke = "1.0.0"
 navigationevent = "1.1.2"
 
 [libraries]
@@ -28,8 +27,6 @@ miuix-preference = { group = "top.yukonga.miuix.kmp", name = "miuix-preference-a
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-# Nuke：自研 Compose 组件库，源码在 ../nuke，由 settings.gradle 的 includeBuild 组入
-nuke-ui = { group = "dev.nuke.ui", name = "nuke", version.ref = "nuke" }
 navigationevent-compose = { group = "androidx.navigationevent", name = "navigationevent-compose", version.ref = "navigationevent" }
 
 [plugins]
