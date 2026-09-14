@@ -275,6 +275,7 @@ Nuke 那套的关键点：
 | 5 | 作者是自己 | 输出为 `justsoso17 <justsoso17@users.noreply.github.com>` |
 | 6 | 能编译 | `BUILD SUCCESSFUL` |
 | 7 | 文件清单无敏感项 | 不含 `local.properties` / `.claude/` / `work/` / `build/` |
+| 8 | **提交信息里无隐私** ⚠️ | `git log --format=%B <范围>` 扫描无命中 —— **`git grep` 搜不到提交信息，必须单独查** |
 
 命令（**整段复制到 Git Bash 跑**，已在 Windows Git Bash 实测通过）：
 
@@ -304,15 +305,22 @@ git log -1 --pretty='%an <%ae>' main
 
 # 7) 公开文件清单（人工过一眼）
 git ls-tree -r --name-only main
+
+# 8) 提交信息 —— git grep 查不到这里，必须单独扫（曾因此在 PR 上公开泄漏路径）
+git log --format=%B origin/master..main | grep -nE '[A-Za-z]:[\\/]|api[_-]?key|secret|token|@'
 ```
 
-> **三个坑（都真实踩过）**：
+> **四个坑（都真实踩过）**：
 > 1. 不加 `-I`：`.so` / `.jar` 会回 `Binary file ... matches`，把真问题淹掉；
 > 2. 不排除 `kb/MODULE_NOTES.md`：本节里的示例串（示例路径、`api...key`、作者邮箱）
 >    会自匹配，导致"永远有命中"，扫了等于没扫；
 > 3. `git grep` 用的是 POSIX 正则，**反斜杠在模式里要写两个**才表示一个字面反斜杠。
 >    因此查「盘符 + 反斜杠」这类路径时一律用 -F（原样路径，不做正则转义）；
 >    用 -E 时反斜杠要翻倍，**多翻一倍会静默漏检**（曾因此漏掉整段历史扫描）。
+> 4. **`git grep` 只搜文件内容，搜不到提交信息** —— 文件全干净 ≠ 提交信息干净。
+>    这一点曾经真的漏过：PR 发出去后才发现两条提交信息里带着本机路径。
+>    提交信息一旦推送就**无法彻底撤回**（改写只能换掉指向，旧 commit 对象仍可能被
+>    直接按 SHA 访问）。所以必须**在推送前**用上面第 8 条单独扫一遍。
 >
 > **要连历史一起查**（当前文件干净 ≠ 历史干净，隐私一旦提交就很难擦）：
 >
