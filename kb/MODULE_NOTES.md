@@ -333,11 +333,16 @@ git ls-tree -r --name-only main
 | `.idea/` `.kotlin/` | 本机 IDE / Kotlin 配置 |
 | `build/` `.gradle/` | 构建产物 |
 
-### 10.5 已知冗余（体积，待清理）
+### 10.5 体积基线
 
-| 路径 | 体积 | 说明 |
-|---|---|---|
-| `app/src/main/jniLibs/armeabi-v7a/` | **约 16.9 MB** | `build.gradle` 的 `abiFilters` 只留 `arm64-v8a`，这两个 `.so` **不会被打进 APK**（已对比 app-debug.apk 内的 `lib/` 核实）。仓库总计 52.7 MB，这里占了 **32%** |
+| 项 | 值 |
+|---|---|
+| 仓库体积 | 约 **35.9 MB** / 56 个文件 |
+| 最大文件 | `app/src/main/jniLibs/arm64-v8a/libAMapSDK_MAP_v11_2_100.so`（24.6 MB） |
+| 已清理 | `app/src/main/jniLibs/armeabi-v7a/`（约 **16.9 MB**）已于 2026-09-14 删除 |
 
-> 删除前注意：高德 SDK 是**本地集成的 16KB 对齐适配版**，v7a 那两个文件删掉后，
-> 将来若要重新支持 32 位需另取同版本 so。
+`abiFilters` 只留 `arm64-v8a`，v7a 那两个 `.so` **从不进入 APK**（已对比 app-debug.apk
+内的 `lib/` 核实：只有 arm64-v8a 四个 so）。删除后仓库从 52.7 MB 降到 35.9 MB。
+
+> **若要重新支持 32 位**：高德 SDK 是本地集成的 **16KB 对齐适配版**，需另取同版本 v7a so
+> 放回 `jniLibs/armeabi-v7a/`，同时改 `build.gradle` 的 `abiFilters`。
