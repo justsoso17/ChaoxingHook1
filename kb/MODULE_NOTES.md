@@ -1,9 +1,9 @@
 ---
 标题: ChaoxingHook 模块主文档
-日期: 2026-09-11
-版本: 1.4
-状态: 与代码同步（2026-09-11 设置页改为三套 UI 风格后可切换）
-tags: hook 点, DexKit, 配置, 踩坑
+日期: 2026-09-14
+版本: 1.5
+状态: 与代码同步（2026-09-14 学习通 7.0.3 实测通过；新增 §10 推送规范）
+tags: hook 点, DexKit, 配置, 踩坑, 推送规范
 关联: README.md, CHANGELOG.md, ../../app/src/main/java/com/fredoseep/chaoxinghook/MainHook.java
 ---
 
@@ -237,3 +237,107 @@ Nuke 那套的关键点：
 8. **`rememberSaveable` 与「实时保存到文件」互相打架**：它恢复的是重建前那一刻的快照，会把刚输入还没落盘（或保存失败）的文本又覆盖回来 → 设置页状态一律用 `remember`，重建后从文件重读（UI 风格切换正好会重建 Activity，踩过）
 9. **Miuix 的 SwitchPreference 开关可拖拽**：自动化测试里 `input swipe` 起点落在开关上会被判成拖拽开关而不是滚动列表（真机验证时的坑）
 10. **Nuke 的 `NukeSettingGroup` 会 clip 整张卡**：卡片高过约 8192px 后命中测试失效（行看得见点不动）→ 长列表一律用 `Modifier.nukeGroupedCardItem(index, count)` 每行独立成 Lazy item
+
+## 10. 版本控制与推送规范（**推送前必读**）
+
+### 10.1 铁律：只推 `main` 一个分支
+
+**本仓库对外只有 `main` 一个分支。所有改动一律提交到 `main` 后推送，不要新建 feature 分支。**
+
+```bash
+git push fork main:main        # 唯一允许的推送目标
+```
+
+| 远端 | 地址 | 用途 |
+|---|---|---|
+| `fork` | `github.com/justsoso17/ChaoxingHook1` | **自己的仓库，唯一推送目标** |
+| `origin` | `github.com/fredoseep/ChaoxingHook1` | 上游原作者仓库，**只读，不要推** |
+
+> 需要试验性改动时，用本地临时分支或 `git stash`，**不要 push**；确认无误后合并回 `main` 再推。
+> 推送别忘带 `fork`：`git push main` 会因为默认远端是 `origin/master` 而推错地方。
+
+### 10.2 为什么定这条规矩（两次真实事故）
+
+1. **分支分叉 → 功能被静默降级**：曾经同时存在 `feat/root-app-list`（Root 权限申请）与
+   `feat/longpress-entry`（功能 24），二者在 `9aff514` 分叉、**互不包含**。
+   按其中一个分支构建安装，会把设备上已装的模块**降级**，而且**没有任何报错** ——
+   用户只会发现"某个功能不见了"。收敛为单一 `main` 后，这类问题从根上消失。
+
+2. **历史里的隐私擦不掉**：本机绝对路径曾随提交进入历史，后来用新提交从工作区清掉了，
+   但 `git log -p` 仍能看到旧版本 —— **事后清理必须重写历史 + 强推**。
+   所以隐私一定要在**提交前**拦下。
+
+### 10.3 推送前检查清单（逐条过，别跳）
+
+| # | 检查项 | 通过判据 |
+|---|---|---|
+| 1 | 只含预期改动 | `git status --short` 的每一行都是你打算提交的 |
+| 2 | **无本机绝对路径** | 扫描无命中 |
+| 3 | 无密钥 / token | 只允许一处预期命中：`com.amap.api.v2.apikey`（高德 SDK 的 **meta-data 名称**，不是密钥值） |
+| 4 | 无身份信息 | 扫描无命中 |
+| 5 | 作者是自己 | 输出为 `justsoso17 <justsoso17@users.noreply.github.com>` |
+| 6 | 能编译 | `BUILD SUCCESSFUL` |
+| 7 | 文件清单无敏感项 | 不含 `local.properties` / `.claude/` / `work/` / `build/` |
+
+命令（**整段复制到 Git Bash 跑**，已在 Windows Git Bash 实测通过）：
+
+```bash
+cd /e/chaoxinghook
+# 排除本规范自身 —— 否则文档里的示例文本会自己匹配自己
+EX=":(exclude)kb/MODULE_NOTES.md"
+
+# 1) 改动清单
+git status --short
+
+# 2) 本机绝对路径（预期：无命中）
+git grep -nIE '[A-Za-z]:[\\/]' -- . "$EX" \
+  | grep -vE 'https?://|schemas\.android\.com|xmlns|apache\.org|gradle\.org|github\.com|developer\.android\.com|aliyun\.com|xposed\.info|amap\.com|chaoxing\.com|aichoxing\.com'
+
+# 3) 密钥 / token（预期：只剩 AndroidManifest 里的 com.amap.api.v2.apikey）
+git grep -nIE 'api[_-]?key|apikey|secret|password|passwd|token|bearer|[0-9a-f]{32}' -- . "$EX"
+
+# 4) 邮箱 / 手机号（预期：无命中）
+git grep -nIE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.(com|cn|net)|1[3-9][0-9]{9}' -- . "$EX"
+
+# 5) 作者身份
+git log -1 --pretty='%an <%ae>' main
+
+# 6) 编译
+./gradlew assembleDebug
+
+# 7) 公开文件清单（人工过一眼）
+git ls-tree -r --name-only main
+```
+
+> **三个坑（都真实踩过）**：
+> 1. 不加 `-I`：`.so` / `.jar` 会回 `Binary file ... matches`，把真问题淹掉；
+> 2. 不排除 `kb/MODULE_NOTES.md`：本节里的示例串（示例路径、`api...key`、作者邮箱）
+>    会自匹配，导致"永远有命中"，扫了等于没扫；
+> 3. `git grep` 用的是 POSIX 正则，**反斜杠在模式里要写两个**才表示一个字面反斜杠。
+>    因此查「盘符 + 反斜杠」这类路径时一律用 -F（原样路径，不做正则转义）；
+>    用 -E 时反斜杠要翻倍，**多翻一倍会静默漏检**（曾因此漏掉整段历史扫描）。
+>
+> **要连历史一起查**（当前文件干净 ≠ 历史干净，隐私一旦提交就很难擦）：
+>
+> ```bash
+> git grep -nI -F '要查的串' $(git rev-list --all)
+> ```
+
+### 10.4 禁止入库的文件（`.gitignore` 已覆盖，**不要用 `git add -f` 绕过**）
+
+| 路径 | 原因 |
+|---|---|
+| `local.properties` | 含高德 `AMAP_MAP_KEY` / `AMAP_WEB_KEY` |
+| `work/` | 脱壳 dex、jadx 反编译、261MB 原始 APK、截图 —— 体积大且敏感 |
+| `.claude/` | 本机 AI 工具配置（含命令历史、URL、临时凭据） |
+| `.idea/` `.kotlin/` | 本机 IDE / Kotlin 配置 |
+| `build/` `.gradle/` | 构建产物 |
+
+### 10.5 已知冗余（体积，待清理）
+
+| 路径 | 体积 | 说明 |
+|---|---|---|
+| `app/src/main/jniLibs/armeabi-v7a/` | **约 16.9 MB** | `build.gradle` 的 `abiFilters` 只留 `arm64-v8a`，这两个 `.so` **不会被打进 APK**（已对比 app-debug.apk 内的 `lib/` 核实）。仓库总计 52.7 MB，这里占了 **32%** |
+
+> 删除前注意：高德 SDK 是**本地集成的 16KB 对齐适配版**，v7a 那两个文件删掉后，
+> 将来若要重新支持 32 位需另取同版本 so。
